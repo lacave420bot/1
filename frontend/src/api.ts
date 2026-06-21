@@ -1,0 +1,90 @@
+const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+
+export type Category = {
+  id: string;
+  name: string;
+  icon: string;
+  image: string;
+  kind: "restaurant" | "grocery";
+};
+
+export type Product = {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  image: string;
+  category_id: string;
+  category_kind: "restaurant" | "grocery";
+  unit?: string | null;
+  popular?: boolean;
+  promo?: boolean;
+};
+
+export type OrderItem = {
+  product_id: string;
+  name: string;
+  price: number;
+  image: string;
+  quantity: number;
+};
+
+export type Order = {
+  id: string;
+  guest_id: string;
+  customer_name: string;
+  address: string;
+  phone: string;
+  notes: string;
+  items: OrderItem[];
+  subtotal: number;
+  delivery_fee: number;
+  total: number;
+  status: string;
+  created_at: string;
+};
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE_URL}/api${path}`, {
+    headers: { "Content-Type": "application/json" },
+    ...init,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export const api = {
+  getCategories: () => request<Category[]>("/categories"),
+  getProducts: (params: {
+    category_id?: string;
+    kind?: string;
+    search?: string;
+    popular?: boolean;
+    promo?: boolean;
+  } = {}) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
+    });
+    const qs = q.toString();
+    return request<Product[]>(`/products${qs ? `?${qs}` : ""}`);
+  },
+  getProduct: (id: string) => request<Product>(`/products/${id}`),
+  createOrder: (body: {
+    guest_id: string;
+    customer_name: string;
+    address: string;
+    phone: string;
+    notes?: string;
+    items: { product_id: string; quantity: number }[];
+  }) =>
+    request<Order>(`/orders`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getOrders: (guest_id: string) =>
+    request<Order[]>(`/orders?guest_id=${encodeURIComponent(guest_id)}`),
+};

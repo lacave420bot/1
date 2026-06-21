@@ -1,0 +1,236 @@
+import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+
+import { api, type Product } from "@/src/api";
+import { useCart, formatPrice } from "@/src/store/cart";
+import { colors, font, radius, shadows, spacing } from "@/src/theme";
+
+export default function ProductDetailScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
+  const { addItem } = useCart();
+  const [product, setProduct] = useState<Product | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [qty, setQty] = useState(1);
+
+  useEffect(() => {
+    (async () => {
+      if (!id) return;
+      try {
+        setLoading(true);
+        setError(null);
+        const p = await api.getProduct(id);
+        setProduct(p);
+      } catch (e: any) {
+        setError(e?.message || "Produit introuvable.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [id]);
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.center} testID="product-loading">
+        <ActivityIndicator size="large" color={colors.brand} />
+      </SafeAreaView>
+    );
+  }
+
+  if (error || !product) {
+    return (
+      <SafeAreaView style={styles.center}>
+        <Text style={styles.errorText}>{error || "Produit introuvable."}</Text>
+        <Pressable style={styles.retryBtn} onPress={() => router.back()} testID="product-back-btn">
+          <Text style={styles.retryText}>Retour</Text>
+        </Pressable>
+      </SafeAreaView>
+    );
+  }
+
+  const handleAdd = () => {
+    addItem(product, qty);
+    router.back();
+  };
+
+  return (
+    <View style={styles.root} testID="product-screen">
+      <ScrollView contentContainerStyle={{ paddingBottom: 140 }} showsVerticalScrollIndicator={false}>
+        <View style={styles.heroWrap}>
+          <Image source={{ uri: product.image }} style={styles.hero} contentFit="cover" />
+          <LinearGradient
+            colors={["rgba(0,0,0,0.5)", "transparent"]}
+            style={styles.heroGradient}
+          />
+          <SafeAreaView style={styles.heroHeader} edges={["top"]}>
+            <Pressable
+              style={styles.backBtn}
+              onPress={() => router.back()}
+              testID="product-back-arrow"
+            >
+              <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
+            </Pressable>
+          </SafeAreaView>
+        </View>
+
+        <View style={styles.body}>
+          <View style={styles.titleRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.title}>{product.name}</Text>
+              {product.unit && <Text style={styles.unit}>{product.unit}</Text>}
+            </View>
+            <Text style={styles.price}>{formatPrice(product.price)}</Text>
+          </View>
+          {product.promo && (
+            <View style={styles.promoBadge}>
+              <Text style={styles.promoBadgeText}>Offre spéciale</Text>
+            </View>
+          )}
+          <Text style={styles.sectionLabel}>Description</Text>
+          <Text style={styles.description}>{product.description}</Text>
+        </View>
+      </ScrollView>
+
+      <View style={styles.footer}>
+        <View style={styles.stepper}>
+          <Pressable
+            style={styles.stepperBtn}
+            onPress={() => setQty((q) => Math.max(1, q - 1))}
+            hitSlop={6}
+            testID="product-dec"
+          >
+            <Ionicons name="remove" size={18} color={colors.onSurface} />
+          </Pressable>
+          <Text style={styles.stepperQty} testID="product-qty">{qty}</Text>
+          <Pressable
+            style={styles.stepperBtn}
+            onPress={() => setQty((q) => q + 1)}
+            hitSlop={6}
+            testID="product-inc"
+          >
+            <Ionicons name="add" size={18} color={colors.onSurface} />
+          </Pressable>
+        </View>
+        <Pressable style={styles.addBtn} onPress={handleAdd} testID="product-add-btn">
+          <Ionicons name="bag-add" size={18} color="#fff" />
+          <Text style={styles.addBtnText}>
+            Ajouter · {formatPrice(product.price * qty)}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.surface },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surface,
+    gap: spacing.md,
+  },
+  heroWrap: { height: 340, position: "relative" },
+  hero: { width: "100%", height: "100%" },
+  heroGradient: { position: "absolute", top: 0, left: 0, right: 0, height: 120 },
+  heroHeader: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: spacing.lg,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.9)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: spacing.sm,
+  },
+  body: { padding: spacing.lg, gap: spacing.md },
+  titleRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.md },
+  title: { fontSize: font.xxl, fontWeight: "700", color: colors.onSurface },
+  unit: { fontSize: font.base, color: colors.muted, marginTop: 2 },
+  price: { fontSize: font.xxl, fontWeight: "800", color: colors.brand },
+  promoBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: colors.brandSecondary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+  },
+  promoBadgeText: { color: colors.onBrandSecondary, fontWeight: "700", fontSize: font.sm },
+  sectionLabel: {
+    fontSize: font.base,
+    fontWeight: "700",
+    color: colors.onSurface,
+    marginTop: spacing.md,
+  },
+  description: { fontSize: font.base, color: colors.onSurfaceTertiary, lineHeight: 22 },
+  footer: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.surfaceSecondary,
+    borderTopWidth: 1,
+    borderTopColor: colors.divider,
+    flexDirection: "row",
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xl,
+  },
+  stepper: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surfaceTertiary,
+    borderRadius: radius.pill,
+    paddingHorizontal: 4,
+    height: 52,
+  },
+  stepperBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepperQty: { minWidth: 28, textAlign: "center", fontWeight: "700", color: colors.onSurface },
+  addBtn: {
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    backgroundColor: colors.brand,
+    height: 52,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    ...shadows.floating,
+  },
+  addBtnText: { color: "#fff", fontWeight: "700", fontSize: font.lg },
+  errorText: { color: colors.error, fontSize: font.base },
+  retryBtn: {
+    backgroundColor: colors.brand,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: radius.pill,
+  },
+  retryText: { color: "#fff", fontWeight: "700" },
+});
