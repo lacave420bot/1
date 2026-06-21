@@ -44,10 +44,24 @@ A French-language hybrid grocery + food-delivery mobile app built with Expo Rout
 - Quantité +/-, suppression, total réactif, badge dans la tab bar
 
 ## Tested
-- ✅ Backend pytest 16/16
-- ✅ E2E frontend (Home → Catalogue → Détail → Panier → Checkout → Commandes)
+- ✅ Backend pytest 22/22 (initial 16 + loyalty/timeline 6)
+- ✅ E2E frontend complet incluant fidélité et timeline
+
+## Loyalty Program (1€ tous les 10€)
+- Tracked via `loyalty` collection per `guest_id`
+- `points_earned = floor((subtotal - points_used) / 10) * 1€`
+- Usable at checkout via "Utiliser ma fidélité" toggle (`use_points` in POST /orders body)
+- Free-delivery threshold uses discounted subtotal
+- Balance affiché à la commande + crédité dans le détail commande
+
+## Order Status Timeline
+- 3 étapes : *En préparation* → *En livraison* → *Livré*
+- Status computed côté backend depuis `created_at` :
+  - < 3 min: En préparation
+  - 3-10 min: En livraison
+  - ≥ 10 min: Livré
+- Page `/order/[id]` avec timeline visuelle, poll auto toutes les 15s jusqu'à livraison
 
 ## Future Enhancements
 - Filtre Restaurant vs Épicerie au niveau de l'onglet Catalogue
-- Page de détail commande dédiée
-- Programme de fidélité / parrainage (revenu incrémental)
+- Programme parrainage (revenu incrémental)
