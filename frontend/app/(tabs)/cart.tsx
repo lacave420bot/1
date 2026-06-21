@@ -55,6 +55,41 @@ export default function CartScreen() {
         contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: 220 }}
         showsVerticalScrollIndicator={false}
       >
+        {/* Free-delivery progress banner */}
+        {(() => {
+          const target = 30;
+          const remaining = Math.max(0, target - subtotal);
+          const pct = Math.min(1, subtotal / target);
+          const reached = remaining === 0;
+          return (
+            <View
+              style={[styles.progressBanner, reached && styles.progressBannerDone]}
+              testID="cart-free-delivery-banner"
+            >
+              <View style={styles.progressHeader}>
+                <Ionicons
+                  name={reached ? "checkmark-circle" : "bicycle"}
+                  size={20}
+                  color={reached ? colors.success : colors.brand}
+                />
+                <Text style={styles.progressText}>
+                  {reached
+                    ? "Bravo ! Livraison gratuite débloquée"
+                    : `Plus que ${formatPrice(remaining)} pour la livraison gratuite`}
+                </Text>
+              </View>
+              <View style={styles.progressTrack}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    { width: `${pct * 100}%`, backgroundColor: reached ? colors.success : colors.brand },
+                  ]}
+                />
+              </View>
+            </View>
+          );
+        })()}
+
         {items.map(({ product, quantity }) => (
           <View key={product.id} style={styles.row} testID={`cart-item-${product.id}`}>
             <Image source={{ uri: product.image }} style={styles.rowImg} contentFit="cover" />
@@ -111,11 +146,6 @@ export default function CartScreen() {
               {deliveryFee === 0 ? "Offerte" : formatPrice(deliveryFee)}
             </Text>
           </View>
-          {subtotal < 30 && (
-            <Text style={styles.summaryHint}>
-              Ajoutez {formatPrice(30 - subtotal)} pour la livraison gratuite.
-            </Text>
-          )}
           <View style={styles.divider} />
           <View style={styles.summaryRow}>
             <Text style={styles.totalLabel}>Total</Text>
@@ -239,4 +269,22 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
   },
   emptyBtnText: { color: "#fff", fontWeight: "700", fontSize: font.base },
+  progressBanner: {
+    backgroundColor: colors.brandSecondary,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  progressBannerDone: {
+    backgroundColor: "#D1FAE5",
+  },
+  progressHeader: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  progressText: { color: colors.onSurface, fontSize: font.base, fontWeight: "700", flex: 1 },
+  progressTrack: {
+    height: 8,
+    borderRadius: radius.pill,
+    backgroundColor: "rgba(255,255,255,0.7)",
+    overflow: "hidden",
+  },
+  progressFill: { height: "100%", borderRadius: radius.pill },
 });

@@ -14,6 +14,27 @@ from datetime import datetime, timezone
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
+ORDER_STATUSES = ["En préparation", "En livraison", "Livré"]
+
+def compute_status(created_at_iso: str) -> str:
+    try:
+        dt = datetime.fromisoformat(created_at_iso)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        elapsed_sec = (datetime.now(timezone.utc) - dt).total_seconds()
+    except Exception:
+        return ORDER_STATUSES[0]
+    if elapsed_sec < 180:  # < 3 min
+        return ORDER_STATUSES[0]
+    if elapsed_sec < 600:  # < 10 min
+        return ORDER_STATUSES[1]
+    return ORDER_STATUSES[2]
+
+
+def with_status(order_doc: dict) -> dict:
+    order_doc["status"] = compute_status(order_doc.get("created_at", ""))
+    return order_doc
+
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
@@ -57,6 +78,7 @@ class OrderIn(BaseModel):
     phone: str
     notes: Optional[str] = ""
     items: List[CartItemIn]
+    use_points: float = 0.0
 
 
 class OrderItem(BaseModel):
@@ -77,9 +99,19 @@ class Order(BaseModel):
     items: List[OrderItem]
     subtotal: float
     delivery_fee: float
+    points_used: float = 0.0
+    points_earned: float = 0.0
     total: float
     status: str = "En préparation"
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+class Loyalty(BaseModel):
+    guest_id: str
+    points_balance: float = 0.0
+    total_earned: float = 0.0
+    total_spent: float = 0.0
+    orders_count: int = 0
 
 
 # ---------------------- Seed Data ----------------------
@@ -237,8 +269,18 @@ async def create_order(payload: OrderIn):
             image=p["image"], quantity=it.quantity,
         ))
 
-    delivery_fee = 0.0 if subtotal >= 30 else 2.99
-    total = round(subtotal + delivery_fee, 2)
+    # Loyalty: validate use_points against current balance
+    loyalty_doc = await db.loyalty.find_one({"guest_id": payload.guest_id}, {"_id": 0})
+    current_balance = float(loyalty_doc["points_balance"]) if loyalty_doc else 0.0
+    use_points = max(0.0, min(float(payload.use_points or 0.0), current_balance, subtotal))
+    use_points = round(use_points, 2)
+
+    discounted_subtotal = max(0.0, subtotal - use_points)
+    delivery_fee = 0.0 if discounted_subtotal >= 30 else 2.99
+    total = round(discounted_subtotal + delivery_fee, 2)
+
+    # Earn 1€ for every 10€ spent (on discounted subtotal, items only)
+    points_earned = round(int(discounted_subtotal // 10) * 1.0, 2)
 
     order = Order(
         guest_id=payload.guest_id,
@@ -249,16 +291,41 @@ async def create_order(payload: OrderIn):
         items=order_items,
         subtotal=round(subtotal, 2),
         delivery_fee=delivery_fee,
+        points_used=use_points,
+        points_earned=points_earned,
         total=total,
     )
     await db.orders.insert_one(order.dict())
+
+    # Update loyalty balance
+    new_balance = round(current_balance - use_points + points_earned, 2)
+    await db.loyalty.update_one(
+        {"guest_id": payload.guest_id},
+        {
+            "$set": {"guest_id": payload.guest_id, "points_balance": new_balance},
+            "$inc": {
+                "total_earned": points_earned,
+                "total_spent": use_points,
+                "orders_count": 1,
+            },
+        },
+        upsert=True,
+    )
     return order
+
+
+@api_router.get("/loyalty/{guest_id}", response_model=Loyalty)
+async def get_loyalty(guest_id: str):
+    doc = await db.loyalty.find_one({"guest_id": guest_id}, {"_id": 0})
+    if not doc:
+        return Loyalty(guest_id=guest_id)
+    return Loyalty(**doc)
 
 
 @api_router.get("/orders", response_model=List[Order])
 async def list_orders(guest_id: str = Query(...)):
     items = await db.orders.find({"guest_id": guest_id}, {"_id": 0}).sort("created_at", -1).to_list(200)
-    return items
+    return [with_status(o) for o in items]
 
 
 @api_router.get("/orders/{order_id}", response_model=Order)
@@ -266,7 +333,7 @@ async def get_order(order_id: str):
     item = await db.orders.find_one({"id": order_id}, {"_id": 0})
     if not item:
         raise HTTPException(status_code=404, detail="Commande introuvable")
-    return item
+    return with_status(item)
 
 
 app.include_router(api_router)

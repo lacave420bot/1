@@ -94,7 +94,12 @@ export default function OrdersScreen() {
           showsVerticalScrollIndicator={false}
         >
           {orders.map((o) => (
-            <View key={o.id} style={styles.card} testID={`order-card-${o.id}`}>
+            <Pressable
+              key={o.id}
+              style={styles.card}
+              onPress={() => router.push(`/order/${o.id}`)}
+              testID={`order-card-${o.id}`}
+            >
               <View style={styles.cardHeader}>
                 <View>
                   <Text style={styles.cardOrderId}>
@@ -102,8 +107,20 @@ export default function OrdersScreen() {
                   </Text>
                   <Text style={styles.cardDate}>{formatDate(o.created_at)}</Text>
                 </View>
-                <View style={styles.statusBadge}>
-                  <Text style={styles.statusText}>{o.status}</Text>
+                <View
+                  style={[
+                    styles.statusBadge,
+                    o.status === "Livré" && styles.statusBadgeDone,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.statusText,
+                      o.status === "Livré" && styles.statusTextDone,
+                    ]}
+                  >
+                    {o.status}
+                  </Text>
                 </View>
               </View>
 
@@ -127,9 +144,12 @@ export default function OrdersScreen() {
                 <Text style={styles.cardItemsCount}>
                   {o.items.reduce((a, b) => a + b.quantity, 0)} articles
                 </Text>
-                <Text style={styles.cardTotal}>{formatPrice(o.total)}</Text>
+                <View style={styles.cardFooterRight}>
+                  <Text style={styles.cardTotal}>{formatPrice(o.total)}</Text>
+                  <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+                </View>
               </View>
-            </View>
+            </Pressable>
           ))}
         </ScrollView>
       )}
@@ -182,7 +202,10 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: radius.pill,
   },
+  statusBadgeDone: { backgroundColor: "#D1FAE5" },
   statusText: { color: colors.onBrandSecondary, fontWeight: "700", fontSize: font.sm },
+  statusTextDone: { color: "#065F46" },
+  cardFooterRight: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   itemsRow: { flexDirection: "row", gap: spacing.sm },
   itemThumb: { width: 48, height: 48, borderRadius: radius.md },
   itemMore: {

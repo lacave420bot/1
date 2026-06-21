@@ -1,0 +1,49 @@
+{
+  "summary": "Iteration 2 (loyalty + free-delivery progress + order timeline) tested end-to-end on the public Expo web preview at mobile viewport 390x844. Backend: 6/6 new pytest cases pass — GET /api/loyalty/{unknown} returns zeros (no 404); POST /api/orders correctly clamps use_points to min(balance, subtotal); points_earned = floor((subtotal-points_used)/10); delivery_fee = 0 when discounted_subtotal >= 30 else 2.99; loyalty balance is correctly updated (new = old - used + earned), orders_count & total_earned/total_spent incremented; GET /api/orders and /api/orders/{id} return computed status (fresh order = 'En préparation'); 404 on unknown order id. Frontend: cart shows free-delivery banner with both states ('Plus que X € pour la livraison gratuite' when < 30€ and 'Bravo ! Livraison gratuite débloquée' at >= 30€); checkout shows 'Utiliser ma fidélité' row only when balance > 0 (CORRECTLY HIDDEN for zero-balance guests), toggling applies '−5,00 €' discount and recomputes total (40,80 − 5,00 = 35,80 €), 'Vous gagnerez X €' hint visible; success screen shows green 'Vous gagnez 3,00 € en fidélité' badge and CTA 'Suivre ma commande' navigates to /order/{id}; order detail screen renders 3 timeline steps (testID timeline-step-0/1/2), status pill ('En préparation'), delivery info, items list and totals breakdown with points_used line + fidélité crédités note; orders list cards are clickable and navigate to detail. No mocked APIs.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "Deprecated style props (shadow*)",
+        "issue": "Console warning persists: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Originates from /app/frontend/src/theme.ts shadow tokens used in cart/checkout/order detail cards. Same as iteration_1 — still not migrated."
+      },
+      {
+        "component": "Deprecated prop pointerEvents",
+        "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Carried over from iteration_1; low priority (likely third-party)."
+      },
+      {
+        "component": "Expo SDK patch versions",
+        "issue": "Expo doctor still warns expo@54.0.34 (expected ~54.0.35), expo-font@14.0.11 (~14.0.12), expo-router@6.0.23 (~6.0.24). Reference: /var/log/supervisor/expo.err.log"
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_loyalty_status.py",
+    "/app/test_reports/pytest/iteration_2.xml"
+  ],
+  "action_items": [
+    "(Optional) Migrate /app/frontend/src/theme.ts shadow tokens (shadows.card/floating) from shadow* props to boxShadow for RN Web compatibility.",
+    "(Optional) Align Expo SDK patch versions via `npx expo install expo expo-font expo-router`."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/server.py:283 — points_earned uses `int(discounted_subtotal // 10) * 1.0`. This is integer cents-per-10€ only (no fractional reward). Fine for current spec (1€ per 10€) but worth a comment.",
+    "/app/backend/server.py:275 — use_points is clamped to min(use_points, current_balance, subtotal). It is correctly NOT clamped to discounted_subtotal at the same time (which would create a circular reference). Behaviour matches frontend (Math.min(availablePoints, subtotal) in checkout.tsx:42).",
+    "/app/frontend/app/order/[id].tsx:74 — 15s polling is reasonable, but server-driven status only depends on created_at (no DB write), so polling is purely a client-side concern; documented.",
+    "/app/frontend/src/store/loyalty.ts — no error state surfaced; failures are silently swallowed. Acceptable for an optional UI element but could log to console for debuggability."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_loyalty_status.py (new — 6 pytest cases for loyalty + status)"
+  ],
+  "success_rate": {"backend": "100% (6/6 new + 16/16 existing)", "frontend": "100% (all iteration_2 testIDs verified)"},
+  "seed_data_creation": "Seeded one order via curl for guest_id `ui_test_1782083409` to create a 5,00 € loyalty balance, then used add_init_script to inject this guest_id into localStorage (key `guest_id_v1`) so the checkout screen surfaced the loyalty toggle. A second order via UI consumed those 5,00 € points and produced 3,00 € of new points (subtotal 40,80 → discounted 35,80 → floor(35,80/10)=3). A fresh guest_id `ui_fresh_no_loyalty` was used to verify the toggle is hidden when balance is 0.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Seeded test guest_ids in DB: ui_test_1782083409 (consumed/topped-up, currently has 3,00 € balance after iteration_2 testing), ui_fresh_no_loyalty (1 order, 0 balance). To exercise the loyalty toggle in a fresh test, POST a 25–40 € order via curl with a fresh guest_id, then inject that guest_id into localStorage('guest_id_v1') via page.add_init_script(). The web client's AsyncStorage backend on web stores values JSON-stringified (so JSON.stringify the string). Timeline transitions are time-based (3 min and 10 min thresholds) — do not wait for them; instead validate the 3 testIDs render and the correct step is highlighted via order.status.",
+  "rca_of_issue": "N/A — no bugs found in iteration_2 scope."
+}

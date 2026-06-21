@@ -39,9 +39,19 @@ export type Order = {
   items: OrderItem[];
   subtotal: number;
   delivery_fee: number;
+  points_used: number;
+  points_earned: number;
   total: number;
   status: string;
   created_at: string;
+};
+
+export type Loyalty = {
+  guest_id: string;
+  points_balance: number;
+  total_earned: number;
+  total_spent: number;
+  orders_count: number;
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -79,6 +89,7 @@ export const api = {
     address: string;
     phone: string;
     notes?: string;
+    use_points?: number;
     items: { product_id: string; quantity: number }[];
   }) =>
     request<Order>(`/orders`, {
@@ -87,4 +98,7 @@ export const api = {
     }),
   getOrders: (guest_id: string) =>
     request<Order[]>(`/orders?guest_id=${encodeURIComponent(guest_id)}`),
+  getOrder: (id: string) => request<Order>(`/orders/${id}`),
+  getLoyalty: (guest_id: string) =>
+    request<Loyalty>(`/loyalty/${encodeURIComponent(guest_id)}`),
 };

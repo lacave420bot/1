@@ -16,18 +16,35 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api } from "@/src/api";
 import { useCart, formatPrice } from "@/src/store/cart";
+import { useLoyalty } from "@/src/store/loyalty";
 import { colors, font, radius, shadows, spacing } from "@/src/theme";
 
 export default function CheckoutScreen() {
   const router = useRouter();
-  const { items, subtotal, deliveryFee, total, guestId, clear } = useCart();
+  const { items, subtotal, guestId, clear } = useCart();
+  const { loyalty, refresh: refreshLoyalty } = useLoyalty(guestId);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [notes, setNotes] = useState("");
+  const [usePoints, setUsePoints] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [success, setSuccess] = useState<{ id: string; total: number } | null>(null);
+  const [success, setSuccess] = useState<{
+    id: string;
+    total: number;
+    points_earned: number;
+    points_used: number;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const availablePoints = loyalty?.points_balance ?? 0;
+  const pointsApplied = usePoints
+    ? Math.min(availablePoints, subtotal)
+    : 0;
+  const discountedSubtotal = Math.max(0, subtotal - pointsApplied);
+  const deliveryFee = discountedSubtotal === 0 ? 0 : discountedSubtotal >= 30 ? 0 : 2.99;
+  const total = Math.round((discountedSubtotal + deliveryFee) * 100) / 100;
+  const pointsToEarn = Math.floor(discountedSubtotal / 10);
 
   const canSubmit = name.trim() && phone.trim() && address.trim() && items.length > 0;
 
@@ -45,10 +62,17 @@ export default function CheckoutScreen() {
         address: address.trim(),
         phone: phone.trim(),
         notes: notes.trim(),
+        use_points: pointsApplied,
         items: items.map((l) => ({ product_id: l.product.id, quantity: l.quantity })),
       });
-      setSuccess({ id: order.id, total: order.total });
+      setSuccess({
+        id: order.id,
+        total: order.total,
+        points_earned: order.points_earned,
+        points_used: order.points_used,
+      });
       clear();
+      refreshLoyalty();
     } catch (e: any) {
       setError(e?.message || "Erreur lors de la validation.");
     } finally {
@@ -67,12 +91,20 @@ export default function CheckoutScreen() {
           Votre commande #{success.id.slice(0, 8).toUpperCase()} est en préparation.
         </Text>
         <Text style={styles.successTotal}>Total : {formatPrice(success.total)}</Text>
+        {success.points_earned > 0 && (
+          <View style={styles.successLoyalty} testID="checkout-success-loyalty">
+            <Ionicons name="gift" size={18} color={colors.brand} />
+            <Text style={styles.successLoyaltyText}>
+              Vous gagnez {formatPrice(success.points_earned)} en fidélité
+            </Text>
+          </View>
+        )}
         <Pressable
           style={styles.successBtn}
-          onPress={() => router.replace("/(tabs)/orders")}
+          onPress={() => router.replace(`/order/${success.id}`)}
           testID="checkout-view-orders"
         >
-          <Text style={styles.successBtnText}>Voir mes commandes</Text>
+          <Text style={styles.successBtnText}>Suivre ma commande</Text>
         </Pressable>
         <Pressable onPress={() => router.replace("/(tabs)/home")} testID="checkout-continue">
           <Text style={styles.linkText}>Continuer les achats</Text>
@@ -174,6 +206,28 @@ export default function CheckoutScreen() {
               <Text style={styles.itemLabel}>Sous-total</Text>
               <Text style={styles.itemPrice}>{formatPrice(subtotal)}</Text>
             </View>
+            {availablePoints > 0 && (
+              <Pressable
+                style={[styles.pointsRow, usePoints && styles.pointsRowActive]}
+                onPress={() => setUsePoints((v) => !v)}
+                testID="checkout-use-points"
+              >
+                <View style={styles.pointsLeft}>
+                  <View style={[styles.checkbox, usePoints && styles.checkboxActive]}>
+                    {usePoints && <Ionicons name="checkmark" size={14} color="#fff" />}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.pointsTitle}>Utiliser ma fidélité</Text>
+                    <Text style={styles.pointsSub}>
+                      {formatPrice(availablePoints)} disponibles
+                    </Text>
+                  </View>
+                </View>
+                {pointsApplied > 0 && (
+                  <Text style={styles.pointsDiscount}>− {formatPrice(pointsApplied)}</Text>
+                )}
+              </Pressable>
+            )}
             <View style={styles.itemRow}>
               <Text style={styles.itemLabel}>Livraison</Text>
               <Text style={styles.itemPrice}>
@@ -185,6 +239,14 @@ export default function CheckoutScreen() {
               <Text style={styles.totalLabel}>Total</Text>
               <Text style={styles.totalValue}>{formatPrice(total)}</Text>
             </View>
+            {pointsToEarn > 0 && (
+              <View style={styles.earnRow}>
+                <Ionicons name="gift-outline" size={16} color={colors.brand} />
+                <Text style={styles.earnText}>
+                  Vous gagnerez {formatPrice(pointsToEarn)} en fidélité
+                </Text>
+              </View>
+            )}
             <View style={styles.paymentNote}>
               <Ionicons name="cash-outline" size={18} color={colors.onSurfaceTertiary} />
               <Text style={styles.paymentNoteText}>Paiement à la livraison</Text>
@@ -272,6 +334,53 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   paymentNoteText: { color: colors.onSurfaceTertiary, fontSize: font.sm, fontWeight: "500" },
+  pointsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.brandSecondary,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    borderWidth: 1.5,
+    borderColor: "transparent",
+  },
+  pointsRowActive: { borderColor: colors.brand },
+  pointsLeft: { flexDirection: "row", alignItems: "center", gap: spacing.md, flex: 1 },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: colors.brand,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+  },
+  checkboxActive: { backgroundColor: colors.brand },
+  pointsTitle: { color: colors.onSurface, fontWeight: "700", fontSize: font.base },
+  pointsSub: { color: colors.onSurfaceTertiary, fontSize: font.sm, marginTop: 2 },
+  pointsDiscount: { color: colors.brand, fontWeight: "800", fontSize: font.base },
+  earnRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.brandTertiary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+  },
+  earnText: { color: colors.onBrandTertiary, fontSize: font.sm, fontWeight: "600", flex: 1 },
+  successLoyalty: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.brandSecondary,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: radius.pill,
+    marginTop: spacing.sm,
+  },
+  successLoyaltyText: { color: colors.onBrandSecondary, fontWeight: "700", fontSize: font.base },
   errorInline: { color: colors.error, fontSize: font.base, fontWeight: "600" },
   ctaBar: {
     position: "absolute",
