@@ -116,92 +116,147 @@ class Loyalty(BaseModel):
 
 # ---------------------- Seed Data ----------------------
 CATEGORIES: List[Category] = [
-    Category(id="burgers", name="Burgers", icon="fast-food", kind="restaurant",
-             image="https://images.pexels.com/photos/9814729/pexels-photo-9814729.jpeg"),
-    Category(id="salades", name="Salades", icon="leaf", kind="restaurant",
-             image="https://images.pexels.com/photos/3298060/pexels-photo-3298060.jpeg"),
-    Category(id="pizzas", name="Pizzas", icon="pizza", kind="restaurant",
-             image="https://images.unsplash.com/photo-1565299624946-b28f40a0ae38"),
-    Category(id="boissons", name="Boissons", icon="wine", kind="restaurant",
-             image="https://images.pexels.com/photos/30900665/pexels-photo-30900665.jpeg"),
-    Category(id="fruits", name="Fruits & Légumes", icon="nutrition", kind="grocery",
-             image="https://images.unsplash.com/photo-1624668430039-0175a0fbf006"),
-    Category(id="boulangerie", name="Boulangerie", icon="cafe", kind="grocery",
-             image="https://images.unsplash.com/photo-1509440159596-0249088772ff"),
-    Category(id="laitiers", name="Produits laitiers", icon="water", kind="grocery",
+    Category(id="fleurs", name="Fleurs CBD", icon="leaf", kind="cbd",
+             image="https://images.unsplash.com/photo-1603909223429-69bb7101f420"),
+    Category(id="resines", name="Résines & Pollens", icon="cube", kind="cbd",
+             image="https://images.unsplash.com/photo-1603909223429-69bb7101f420"),
+    Category(id="huiles", name="Huiles CBD", icon="water", kind="cbd",
+             image="https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5"),
+    Category(id="eliquides", name="E-liquides", icon="cloud", kind="cbd",
+             image="https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5"),
+    Category(id="infusions", name="Infusions & Confiserie", icon="cafe", kind="cbd",
+             image="https://images.unsplash.com/photo-1546793665-c74683f339c1"),
+    Category(id="cosmetiques", name="Cosmétiques", icon="sparkles", kind="cbd",
+             image="https://images.unsplash.com/photo-1571212515416-fef01fc43637"),
+    Category(id="animaux", name="Animaux", icon="paw", kind="cbd",
              image="https://images.unsplash.com/photo-1628088062854-d1870b4553da"),
-    Category(id="epicerie", name="Épicerie", icon="basket", kind="grocery",
+    Category(id="accessoires", name="Accessoires", icon="construct", kind="cbd",
              image="https://images.unsplash.com/photo-1542838132-92c53300491e"),
 ]
 
+# All products contain < 0,3 % THC, conformément à la réglementation française.
 PRODUCTS: List[Product] = [
-    # Restaurant
-    Product(name="Burger Classique", description="Bœuf, cheddar fondu, salade, tomate, oignons caramélisés, sauce maison.",
-            price=9.50, image="https://images.unsplash.com/photo-1568901346375-23c9450c58cd",
-            category_id="burgers", category_kind="restaurant", popular=True, promo=True),
-    Product(name="Cheeseburger Bacon", description="Double cheddar, bacon croustillant, oignons frits, sauce BBQ.",
-            price=11.90, image="https://images.unsplash.com/photo-1565299507177-b0ac66763828",
-            category_id="burgers", category_kind="restaurant", popular=True),
-    Product(name="Veggie Burger", description="Steak végétal aux légumes, avocat, salade, sauce yaourt aux herbes.",
-            price=10.50, image="https://images.unsplash.com/photo-1520072959219-c595dc870360",
-            category_id="burgers", category_kind="restaurant"),
-    Product(name="Salade César", description="Poulet grillé, croûtons, parmesan, sauce César onctueuse.",
-            price=8.90, image="https://images.unsplash.com/photo-1546793665-c74683f339c1",
-            category_id="salades", category_kind="restaurant", popular=True),
-    Product(name="Salade du Marché", description="Quinoa, avocat, tomates cerises, feta, graines, vinaigrette citron.",
-            price=9.50, image="https://images.pexels.com/photos/3298060/pexels-photo-3298060.jpeg",
-            category_id="salades", category_kind="restaurant"),
-    Product(name="Pizza Margherita", description="Sauce tomate, mozzarella di Bufala, basilic frais, huile d'olive.",
-            price=10.90, image="https://images.unsplash.com/photo-1574071318508-1cdbab80d002",
-            category_id="pizzas", category_kind="restaurant", popular=True),
-    Product(name="Pizza 4 Fromages", description="Mozzarella, gorgonzola, parmesan, chèvre. Un délice fondant.",
-            price=12.90, image="https://images.unsplash.com/photo-1513104890138-7c749659a591",
-            category_id="pizzas", category_kind="restaurant", promo=True),
-    Product(name="Limonade Maison", description="Citron pressé, eau pétillante, menthe fraîche. Rafraîchissante.",
-            price=3.50, image="https://images.pexels.com/photos/30900665/pexels-photo-30900665.jpeg",
-            category_id="boissons", category_kind="restaurant"),
-    Product(name="Smoothie Fruits Rouges", description="Fraise, framboise, myrtille, yaourt grec, miel.",
-            price=4.90, image="https://images.unsplash.com/photo-1638176067000-9e2017b58a36",
-            category_id="boissons", category_kind="restaurant", popular=True),
-    # Grocery
-    Product(name="Pommes Gala", description="Pommes Gala croquantes et sucrées. Origine France.",
-            price=2.50, unit="kg", image="https://images.unsplash.com/photo-1568702846914-96b305d2aaeb",
-            category_id="fruits", category_kind="grocery"),
-    Product(name="Bananes Bio", description="Bananes biologiques équitables. Riches en potassium.",
-            price=2.20, unit="kg", image="https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e",
-            category_id="fruits", category_kind="grocery", popular=True),
-    Product(name="Tomates Cerises", description="Tomates cerises sucrées et juteuses. Barquette 250g.",
-            price=2.90, unit="250g", image="https://images.unsplash.com/photo-1592924357228-91a4daadcfea",
-            category_id="fruits", category_kind="grocery"),
-    Product(name="Baguette Tradition", description="Baguette artisanale cuite au four à bois.",
-            price=1.20, unit="pièce", image="https://images.unsplash.com/photo-1509440159596-0249088772ff",
-            category_id="boulangerie", category_kind="grocery", popular=True),
-    Product(name="Croissants au Beurre", description="Croissants pur beurre AOP. Lot de 4.",
-            price=4.50, unit="x4", image="https://images.unsplash.com/photo-1555507036-ab1f4038808a",
-            category_id="boulangerie", category_kind="grocery", promo=True),
-    Product(name="Lait Demi-Écrémé", description="Lait demi-écrémé UHT. Bouteille 1L.",
-            price=1.10, unit="1L", image="https://images.unsplash.com/photo-1628088062854-d1870b4553da",
-            category_id="laitiers", category_kind="grocery"),
-    Product(name="Yaourts Nature Bio", description="Yaourts nature bio. Pack de 4 pots.",
-            price=2.80, unit="x4", image="https://images.unsplash.com/photo-1571212515416-fef01fc43637",
-            category_id="laitiers", category_kind="grocery"),
-    Product(name="Pâtes Penne", description="Pâtes penne de blé dur. Paquet 500g.",
-            price=1.50, unit="500g", image="https://images.unsplash.com/photo-1551462147-37885acc36f1",
-            category_id="epicerie", category_kind="grocery"),
-    Product(name="Huile d'Olive Extra", description="Huile d'olive vierge extra. Bouteille 75cl.",
-            price=8.90, unit="75cl", image="https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5",
-            category_id="epicerie", category_kind="grocery", popular=True),
+    # --- Fleurs CBD ---
+    Product(name="Strawberry Haze Indoor", description="Sativa fruitée aux notes de fraise. Culture indoor sous LED. 18 % CBD · < 0,2 % THC.",
+            price=9.00, unit="1 g", image="https://images.unsplash.com/photo-1603909223429-69bb7101f420",
+            category_id="fleurs", category_kind="cbd", popular=True),
+    Product(name="Amnesia Haze Greenhouse", description="Variété classique aux arômes citronnés et terreux. 14 % CBD · < 0,2 % THC.",
+            price=7.00, unit="1 g", image="https://images.unsplash.com/photo-1603909223429-69bb7101f420",
+            category_id="fleurs", category_kind="cbd", popular=True),
+    Product(name="OG Kush Indoor", description="Indica relaxante, notes de pin et de terre. 19 % CBD · < 0,2 % THC.",
+            price=9.50, unit="1 g", image="https://images.unsplash.com/photo-1603909223429-69bb7101f420",
+            category_id="fleurs", category_kind="cbd"),
+    Product(name="Gorilla Glue Indoor", description="Hybride puissante, terpènes boisés et résineux. 17 % CBD · < 0,2 % THC.",
+            price=9.00, unit="1 g", image="https://images.unsplash.com/photo-1603909223429-69bb7101f420",
+            category_id="fleurs", category_kind="cbd", promo=True),
+    Product(name="Purple Haze Outdoor", description="Plein air, notes de fruits rouges et de raisin. 12 % CBD · < 0,2 % THC.",
+            price=6.00, unit="1 g", image="https://images.unsplash.com/photo-1603909223429-69bb7101f420",
+            category_id="fleurs", category_kind="cbd"),
+    Product(name="Lemon Haze Greenhouse", description="Sativa pétillante aux arômes d'agrumes frais. 15 % CBD · < 0,2 % THC.",
+            price=7.50, unit="1 g", image="https://images.unsplash.com/photo-1603909223429-69bb7101f420",
+            category_id="fleurs", category_kind="cbd"),
+    Product(name="Critical Mass Outdoor", description="Indica douce et relaxante, dense et terreuse. 13 % CBD · < 0,2 % THC.",
+            price=6.00, unit="1 g", image="https://images.unsplash.com/photo-1603909223429-69bb7101f420",
+            category_id="fleurs", category_kind="cbd", promo=True),
+    Product(name="White Widow Indoor", description="Hybride iconique aux notes florales et poivrées. 18 % CBD · < 0,2 % THC.",
+            price=9.00, unit="1 g", image="https://images.unsplash.com/photo-1603909223429-69bb7101f420",
+            category_id="fleurs", category_kind="cbd", popular=True),
+
+    # --- Résines & Pollens ---
+    Product(name="Charas Hindou Kush", description="Résine artisanale roulée main, texture souple, arôme épicé. 22 % CBD · < 0,2 % THC.",
+            price=10.00, unit="1 g", image="https://images.unsplash.com/photo-1603909223429-69bb7101f420",
+            category_id="resines", category_kind="cbd", popular=True),
+    Product(name="Afghan Hash", description="Résine traditionnelle afghane, douce et terreuse. 20 % CBD · < 0,2 % THC.",
+            price=8.00, unit="1 g", image="https://images.unsplash.com/photo-1603909223429-69bb7101f420",
+            category_id="resines", category_kind="cbd"),
+    Product(name="Pollen Gold", description="Pollen pressé blond, arômes herbacés délicats. 18 % CBD · < 0,2 % THC.",
+            price=7.00, unit="1 g", image="https://images.unsplash.com/photo-1603909223429-69bb7101f420",
+            category_id="resines", category_kind="cbd"),
+
+    # --- Huiles CBD ---
+    Product(name="Huile CBD 5 % Full Spectrum", description="Huile sublinguale full spectrum, base MCT coco. 500 mg CBD · flacon 10 ml.",
+            price=24.90, unit="10 ml", image="https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5",
+            category_id="huiles", category_kind="cbd", popular=True),
+    Product(name="Huile CBD 10 % Full Spectrum", description="Spectre complet, terpènes naturels, base MCT. 1000 mg CBD · 10 ml.",
+            price=39.90, unit="10 ml", image="https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5",
+            category_id="huiles", category_kind="cbd", popular=True),
+    Product(name="Huile CBD 20 % Broad Spectrum", description="Sans THC détectable, idéale pour usage quotidien. 2000 mg CBD · 10 ml.",
+            price=69.90, unit="10 ml", image="https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5",
+            category_id="huiles", category_kind="cbd"),
+    Product(name="Huile CBD 30 % Isolat", description="Isolat de CBD pur cristallisé, base huile de chanvre. 3000 mg CBD · 10 ml.",
+            price=89.90, unit="10 ml", image="https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5",
+            category_id="huiles", category_kind="cbd", promo=True),
+
+    # --- E-liquides ---
+    Product(name="E-liquide Fraise CBD 300 mg", description="Saveur fraise gourmande, ratio 50/50 PG/VG. 10 ml.",
+            price=19.90, unit="10 ml", image="https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5",
+            category_id="eliquides", category_kind="cbd"),
+    Product(name="E-liquide Menthe Glaciale 500 mg", description="Fraîcheur intense, sans nicotine. 10 ml.",
+            price=24.90, unit="10 ml", image="https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5",
+            category_id="eliquides", category_kind="cbd", popular=True),
+    Product(name="E-liquide Fruits Rouges 1000 mg", description="Mix fraise/framboise/cassis, dosage puissant. 10 ml.",
+            price=39.90, unit="10 ml", image="https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5",
+            category_id="eliquides", category_kind="cbd"),
+
+    # --- Infusions & Confiserie ---
+    Product(name="Tisane Relaxation CBD", description="Mélange chanvre, camomille et tilleul. 20 sachets dosés à 15 mg CBD.",
+            price=12.90, unit="x20", image="https://images.unsplash.com/photo-1546793665-c74683f339c1",
+            category_id="infusions", category_kind="cbd", popular=True),
+    Product(name="Tisane Sommeil CBD", description="Chanvre, mélisse, valériane, verveine. 20 sachets à 20 mg CBD.",
+            price=14.90, unit="x20", image="https://images.unsplash.com/photo-1546793665-c74683f339c1",
+            category_id="infusions", category_kind="cbd"),
+    Product(name="Gummies CBD 25 mg", description="Bonbons gélifiés aux fruits, vegan, sans gluten. Boîte de 20.",
+            price=19.90, unit="x20", image="https://images.unsplash.com/photo-1546793665-c74683f339c1",
+            category_id="infusions", category_kind="cbd", promo=True),
+    Product(name="Chocolat Noir CBD 50 mg", description="Chocolat noir 70 %, infusé au CBD. Tablette 80 g.",
+            price=14.90, unit="80 g", image="https://images.unsplash.com/photo-1546793665-c74683f339c1",
+            category_id="infusions", category_kind="cbd"),
+
+    # --- Cosmétiques ---
+    Product(name="Crème Massage CBD 250 mg", description="Crème apaisante au CBD et arnica. Tube 100 ml.",
+            price=24.90, unit="100 ml", image="https://images.unsplash.com/photo-1571212515416-fef01fc43637",
+            category_id="cosmetiques", category_kind="cbd", popular=True),
+    Product(name="Baume Articulations 500 mg", description="Baume concentré CBD + menthol + eucalyptus. Pot 50 ml.",
+            price=29.90, unit="50 ml", image="https://images.unsplash.com/photo-1571212515416-fef01fc43637",
+            category_id="cosmetiques", category_kind="cbd"),
+
+    # --- Animaux ---
+    Product(name="Huile CBD 5 % Animaux", description="Spécialement formulée pour chien et chat. Saveur naturelle. 10 ml.",
+            price=24.90, unit="10 ml", image="https://images.unsplash.com/photo-1628088062854-d1870b4553da",
+            category_id="animaux", category_kind="cbd", popular=True),
+    Product(name="Friandises Chien CBD 25 mg", description="Friandises au saumon, sans céréales. Sachet de 30.",
+            price=19.90, unit="x30", image="https://images.unsplash.com/photo-1628088062854-d1870b4553da",
+            category_id="animaux", category_kind="cbd"),
+
+    # --- Accessoires ---
+    Product(name="Grinder Métal 4 Parts", description="Grinder aluminium anodisé 50 mm, 4 compartiments, tamis pollen.",
+            price=14.90, unit="pièce", image="https://images.unsplash.com/photo-1542838132-92c53300491e",
+            category_id="accessoires", category_kind="cbd"),
+    Product(name="Vaporisateur Portable", description="Vaporisateur à convection, idéal pour fleurs et résines. Garantie 2 ans.",
+            price=79.90, unit="pièce", image="https://images.unsplash.com/photo-1542838132-92c53300491e",
+            category_id="accessoires", category_kind="cbd", promo=True),
+    Product(name="Boîte de Conservation", description="Boîte hermétique en verre opaque, préserve les terpènes. 100 ml.",
+            price=9.90, unit="100 ml", image="https://images.unsplash.com/photo-1542838132-92c53300491e",
+            category_id="accessoires", category_kind="cbd"),
 ]
 
 
 @app.on_event("startup")
 async def seed_database():
-    # Seed categories
-    if await db.categories.count_documents({}) == 0:
+    # Force reseed of catalog so the new CBD products replace the legacy ones.
+    # We use a `meta` doc with a seed version to avoid wiping on every restart.
+    SEED_VERSION = "cbd-v2"
+    meta = await db.meta.find_one({"_id": "catalog_seed"})
+    if not meta or meta.get("version") != SEED_VERSION:
+        await db.categories.delete_many({})
+        await db.products.delete_many({})
         await db.categories.insert_many([c.dict() for c in CATEGORIES])
-    # Seed products
-    if await db.products.count_documents({}) == 0:
         await db.products.insert_many([p.dict() for p in PRODUCTS])
+        await db.meta.update_one(
+            {"_id": "catalog_seed"},
+            {"$set": {"version": SEED_VERSION}},
+            upsert=True,
+        )
 
 
 # ---------------------- Routes ----------------------

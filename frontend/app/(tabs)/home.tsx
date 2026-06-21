@@ -80,8 +80,8 @@ export default function HomeScreen() {
         {/* Header */}
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.greetSm}>Bonjour</Text>
-            <Text style={styles.greetLg}>L&apos;Épicurien</Text>
+            <Text style={styles.greetSm}>Bienvenue chez</Text>
+            <Text style={styles.greetLg}>Verte Vallée CBD</Text>
           </View>
           <Pressable
             onPress={() => router.push("/(tabs)/catalog")}
@@ -91,6 +91,14 @@ export default function HomeScreen() {
           >
             <Ionicons name="search" size={20} color={colors.onSurface} />
           </Pressable>
+        </View>
+
+        {/* Compliance banner */}
+        <View style={styles.complianceBanner} testID="home-compliance-banner">
+          <Ionicons name="shield-checkmark" size={18} color={colors.success} />
+          <Text style={styles.complianceText}>
+            Produits conformes — THC &lt; 0,3 % · Réservé aux adultes 18 ans et +
+          </Text>
         </View>
 
         {/* Hero promo */}
@@ -275,6 +283,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  complianceBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+  },
+  complianceText: { color: "#065F46", fontSize: font.sm, fontWeight: "600", flex: 1 },
   hero: {
     marginHorizontal: spacing.lg,
     height: 180,
