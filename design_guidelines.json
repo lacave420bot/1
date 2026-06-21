@@ -1,0 +1,185 @@
+{
+  "app_name": "L'Épicurien (Grocery & Delivery)",
+  "personality": "1 iOS-Native Clean",
+  "personality_one_liner": "A clean, modern, and appetizing iOS-native layout with warm, vibrant coral accents that evoke freshness and speed.",
+  "color": {
+    "surface": "#FFF9F7",
+    "onSurface": "#1C1917",
+    "surfaceSecondary": "#FFFFFF",
+    "onSurfaceSecondary": "#1C1917",
+    "surfaceTertiary": "#F5EBE8",
+    "onSurfaceTertiary": "#3E3431",
+    "surfaceInverse": "#1C1917",
+    "onSurfaceInverse": "#FFFFFF",
+    "brand": "#F25C54",
+    "brandPrimary": "#F25C54",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#FFEDE9",
+    "onBrandSecondary": "#D83D1B",
+    "brandTertiary": "#FCE8E4",
+    "onBrandTertiary": "#9A2911",
+    "success": "#10B981",
+    "onSuccess": "#FFFFFF",
+    "warning": "#F59E0B",
+    "onWarning": "#FFFFFF",
+    "error": "#EF4444",
+    "onError": "#FFFFFF",
+    "info": "#6B7280",
+    "onInfo": "#FFFFFF",
+    "border": "#EBE3E0",
+    "borderStrong": "#D9CACA",
+    "divider": "#F2EBE9"
+  },
+  "typography": {
+    "displayFontFamily": "Plus Jakarta Sans",
+    "textFontFamily": "Satoshi",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous vertical breathing room. Use 16px (lg) outer margins. Do not cluster cards; use space-between for grids.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": 1,
+  "navigation": "bottom_tabs",
+  "icon_set": "Ionicons",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Use glass on bottom tab bar, floating cart summaries, and sticky sticky headers over scrolling content.",
+      "Use glass on floating 'Add to cart' primary CTAs."
+    ],
+    "dont's": [
+      "Do not use glass on standard product cards or list items."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Home",
+      "purpose": "Discover promos, popular food items, and categories in a scrollable, appetizing feed.",
+      "states": {
+        "loading": "Centered spinner",
+        "empty": "Illustration of a basket + 'Aucun produit disponible.'",
+        "error": "'Erreur de chargement.' + Retry button"
+      },
+      "layout": "A vertical ScrollView. Start with a prominent hero section (featured promo) with a gradient scrim and text. Follow with horizontally scrolling categories (chips or tinted icon containers), and a grid of popular items. Leave bottom padding for the tab bar."
+    },
+    {
+      "name": "Catalog",
+      "purpose": "Browse products (grocery + restaurant) with search and category filters.",
+      "states": {
+        "loading": "Centered spinner",
+        "empty": "Illustration + 'Aucun produit trouvé.'",
+        "error": "'Impossible de charger le catalogue.' + Retry"
+      },
+      "layout": "Sticky header with search bar and filter chips (glass effect). 2-column grid for products using space-between. Each product card has an image, price, title, and a small '+' button. Include a floating 'View Cart' mini-bar at the bottom if items are in cart."
+    },
+    {
+      "name": "Product Detail",
+      "purpose": "Show full product info and allow quantity adjustment before adding to cart.",
+      "states": {
+        "loading": "Centered spinner",
+        "empty": "Not applicable (navigated with data)",
+        "error": "'Produit introuvable.' + Go Back"
+      },
+      "layout": "Large full-width image at the top with a top-to-bottom gradient scrim for the back button. Content area below with title, price, description. A sticky glass footer containing quantity selector and a primary 'Ajouter au panier' button."
+    },
+    {
+      "name": "Cart",
+      "purpose": "Review items, adjust quantities, and see transparent pricing before checkout.",
+      "states": {
+        "loading": "Centered spinner",
+        "empty": "Empty shopping bag illustration + 'Votre panier est vide' + 'Découvrir nos produits' button.",
+        "error": "Error message + Retry"
+      },
+      "layout": "List of cart items (image, title, price, +/- stepper). Below the list, a pricing breakdown (Sous-total, Livraison, Total). Sticky bottom CTA 'Passer la commande'."
+    },
+    {
+      "name": "Checkout",
+      "purpose": "Simulate the guest checkout process (address and validation).",
+      "states": {
+        "loading": "Centered spinner during submission",
+        "empty": "N/A",
+        "error": "'Erreur lors de la validation.' + Retry"
+      },
+      "layout": "Single-column form for delivery address. Clean input fields with labels above. A final order summary and a sticky 'Confirmer la commande' (cash on delivery / sim) button."
+    },
+    {
+      "name": "Order History",
+      "purpose": "View past guest orders.",
+      "states": {
+        "loading": "Centered spinner",
+        "empty": "Illustration + 'Aucune commande passée.'",
+        "error": "'Erreur de chargement.' + Retry"
+      },
+      "layout": "Simple list of order cards. Each card shows order date, total amount, and status (e.g., Livré)."
+    }
+  ],
+  "images": {
+    "hero_promo": {
+      "url": "https://images.pexels.com/photos/9814729/pexels-photo-9814729.jpeg",
+      "alt": "Delicious burger and fries flatlay"
+    },
+    "category_healthy": {
+      "url": "https://images.pexels.com/photos/3298060/pexels-photo-3298060.jpeg",
+      "alt": "Healthy vegetable salad bowl"
+    },
+    "category_grocery": {
+      "url": "https://images.unsplash.com/photo-1624668430039-0175a0fbf006",
+      "alt": "Fresh organic vegetables in basket"
+    },
+    "category_drinks": {
+      "url": "https://images.pexels.com/photos/30900665/pexels-photo-30900665.jpeg",
+      "alt": "Fresh orange juice glass"
+    },
+    "empty_cart": {
+      "url": "https://images.pexels.com/photos/12024975/pexels-photo-12024975.jpeg",
+      "alt": "Empty white shopping bags on neutral background"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Follow 1 iOS-Native Clean layout principles: generous spacing, clean typography, avoid clutter.",
+    "Do NOT use emoji anywhere in the UI. Use Ionicons.",
+    "Implement a bottom floating mini-cart summary in the Catalog screen if there are items in the cart (to allow quick checkout navigation).",
+    "On the Product Detail screen, ensure the hero image uses a gradient scrim to keep the back button readable.",
+    "For the Checkout form, use a single column layout with labels above the inputs inside a KeyboardAvoidingView.",
+    "Make sure primary CTAs (like 'Ajouter au panier' or 'Commander') are sticky at the bottom, using a glass container or solid surface background to separate them from scrolling content.",
+    "Maintain the French language (fr) across all UI copies as requested."
+  ],
+  "haptics": {
+    "add_to_cart": "impactLight",
+    "increase_quantity": "selection",
+    "decrease_quantity": "selection",
+    "confirm_order": "notificationSuccess",
+    "tab_press": "selection"
+  }
+}
