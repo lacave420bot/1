@@ -21,8 +21,14 @@ from datetime import datetime, timezone, timedelta
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-ORDER_STATUSES = ["En cours", "Terminée"]
-ADMIN_STATUS_CHOICES = ["En cours", "Terminée", "Annulée"]
+ORDER_STATUSES = ["En cours", "En préparation"]
+ADMIN_STATUS_CHOICES = [
+    "En cours",
+    "En préparation",
+    "Commande prête",
+    "Commande au point de livraison",
+    "Annulée",
+]
 DEFAULT_LOW_STOCK_THRESHOLD = 5
 
 
@@ -31,10 +37,24 @@ def compute_status(created_at_iso: str) -> str:
     return ORDER_STATUSES[0]
 
 
+def normalize_status(order_status: str, delivery_mode: Optional[str] = None) -> str:
+    normalized = (order_status or "").strip()
+    mode = (delivery_mode or "delivery").strip()
+    if not normalized:
+        return "En cours"
+    if normalized == "Terminée":
+        if mode == "pickup":
+            return "Commande prête"
+        return "Commande au point de livraison"
+    if normalized in ADMIN_STATUS_CHOICES:
+        return normalized
+    return "En cours"
+
+
 def with_status(order_doc: dict) -> dict:
     manual = order_doc.get("manual_status")
     if manual:
-        order_doc["status"] = manual
+        order_doc["status"] = normalize_status(manual, order_doc.get("delivery_mode", "delivery"))
     else:
         order_doc["status"] = compute_status(order_doc.get("created_at", ""))
     return order_doc
@@ -895,6 +915,12 @@ def _esc(s) -> str:
     return html_lib.escape(str(s or ""), quote=False)
 
 
+def _estimated_window_label(delivery_mode: str) -> str:
+    if (delivery_mode or "delivery") == "pickup":
+        return "Retrait estimé sous 20 à 35 min."
+    return "Prise en charge estimée sous 35 à 55 min."
+
+
 def _format_order_html(order: Order) -> str:
     is_pickup = (order.delivery_mode or "delivery") == "pickup"
     mode_line = "🏪 <b>Retrait sur place</b>" if is_pickup else "🚚 <b>Livraison</b>"
@@ -902,6 +928,7 @@ def _format_order_html(order: Order) -> str:
         f"🛒 <b>Nouvelle commande</b> #{_esc(order.id[:8].upper())}",
         f"👤 <b>{_esc(order.customer_name)}</b>" + (f" · {_esc(order.phone)}" if order.phone else ""),
         mode_line,
+        f"⏱️ <b>{_esc(_estimated_window_label(order.delivery_mode))}</b>",
     ]
     if not is_pickup and order.address:
         lines.append(f"📍 {_esc(order.address)}")
@@ -966,16 +993,26 @@ async def send_telegram_order_notification(order: Order) -> None:
 
 def _order_action_keyboard(order_id: str, current_status: str) -> dict:
     """Build the inline keyboard shown under each order notification."""
-    is_done = current_status == "Terminée"
-    is_cancelled = current_status == "Annulée"
-    row1 = []
-    if not is_done:
-        row1.append({"text": "✅ Terminer", "callback_data": f"done:{order_id}"})
-    if not is_cancelled:
-        row1.append({"text": "❌ Annuler", "callback_data": f"cancel:{order_id}"})
-    if is_done or is_cancelled:
-        row1.append({"text": "🔄 Remettre en cours", "callback_data": f"reopen:{order_id}"})
-    return {"inline_keyboard": [row1]}
+    normalized_status = normalize_status(current_status)
+    final_statuses = {"Commande prête", "Commande au point de livraison"}
+    buttons = []
+    if normalized_status != "En cours":
+        buttons.append({"text": "🔄 En cours", "callback_data": f"set_status:{order_id}:En cours"})
+    if normalized_status != "En préparation":
+        buttons.append({"text": "👨‍🍳 En préparation", "callback_data": f"set_status:{order_id}:En préparation"})
+    if normalized_status != "Commande prête":
+        buttons.append({"text": "✅ Commande prête (sur place)", "callback_data": f"set_status:{order_id}:Commande prête"})
+    if normalized_status != "Commande au point de livraison":
+        buttons.append({
+            "text": "🚚 Commande au point de livraison",
+            "callback_data": f"set_status:{order_id}:Commande au point de livraison",
+        })
+    if normalized_status != "Annulée":
+        buttons.append({"text": "❌ Annuler", "callback_data": f"set_status:{order_id}:Annulée"})
+    if normalized_status in final_statuses or normalized_status == "Annulée":
+        buttons.append({"text": "🔄 Remettre en cours", "callback_data": f"set_status:{order_id}:En cours"})
+    rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    return {"inline_keyboard": rows}
 
 
 async def _telegram_edit_order_message(order: Order) -> None:
@@ -990,13 +1027,14 @@ async def _telegram_edit_order_message(order: Order) -> None:
     token, _ = await _get_telegram_config()
     if not token:
         return
-    status_line = ""
-    if order.status == "Terminée":
-        status_line = "\n\n✅ <b>Marquée comme TERMINÉE</b>"
-    elif order.status == "Annulée":
-        status_line = "\n\n❌ <b>Marquée comme ANNULÉE</b>"
-    else:
-        status_line = "\n\n🔄 <b>Remise EN COURS</b>"
+    current_status = order.status or ""
+    status_line = {
+        "En cours": "\n\n🔄 <b>Remise EN COURS</b>",
+        "En préparation": "\n\n👨‍🍳 <b>Commande EN PRÉPARATION</b>",
+        "Commande prête": "\n\n✅ <b>Commande PRÊTE (sur place)</b>",
+        "Commande au point de livraison": "\n\n🚚 <b>Commande AU POINT DE LIVRAISON</b>",
+        "Annulée": "\n\n❌ <b>Commande ANNULÉE</b>",
+    }.get(current_status, f"\n\nℹ️ <b>Statut : {_esc(current_status)}</b>")
     new_text = _format_order_html(order) + status_line
     try:
         async with httpx.AsyncClient(timeout=8.0) as client_h:
@@ -1008,7 +1046,10 @@ async def _telegram_edit_order_message(order: Order) -> None:
                     "text": new_text,
                     "parse_mode": "HTML",
                     "disable_web_page_preview": True,
-                    "reply_markup": _order_action_keyboard(order.id, order.status or "En cours"),
+                    "reply_markup": _order_action_keyboard(
+                        order.id,
+                        normalize_status(order.status, order.delivery_mode),
+                    ),
                 },
             )
     except Exception as e:
@@ -1438,20 +1479,20 @@ async def admin_list_orders(_admin: dict = Depends(require_admin)):
 
 @api_router.patch("/admin/orders/{order_id}", response_model=Order)
 async def admin_update_order(order_id: str, payload: OrderStatusUpdate, _admin: dict = Depends(require_admin)):
-    if payload.status not in ADMIN_STATUS_CHOICES:
-        raise HTTPException(status_code=400, detail=f"Statut invalide. Choix : {', '.join(ADMIN_STATUS_CHOICES)}")
-
     before_doc = await db.orders.find_one({"id": order_id}, {"_id": 0})
     if not before_doc:
         raise HTTPException(status_code=404, detail="Commande introuvable")
+    normalized_status = normalize_status(payload.status, before_doc.get("delivery_mode", "delivery"))
+    if normalized_status not in ADMIN_STATUS_CHOICES:
+        raise HTTPException(status_code=400, detail=f"Statut invalide. Choix : {', '.join(ADMIN_STATUS_CHOICES)}")
     prev_status = with_status(dict(before_doc)).get("status")
 
     await db.orders.update_one(
         {"id": order_id},
-        {"$set": {"manual_status": payload.status}},
+        {"$set": {"manual_status": normalized_status}},
     )
 
-    new_status = payload.status
+    new_status = normalized_status
 
     # Restock items when an order transitions INTO "Annulée"
     if new_status == "Annulée" and prev_status != "Annulée":
@@ -1803,15 +1844,28 @@ async def telegram_webhook(request: Request):
         await _telegram_answer_callback(cb_id, "Action inconnue.")
         return {"ok": True}
 
-    action, order_id = data.split(":", 1)
-    target_status = {"done": "Terminée", "cancel": "Annulée", "reopen": "En cours"}.get(action)
-    if not target_status:
-        await _telegram_answer_callback(cb_id, "Action inconnue.")
-        return {"ok": True}
+    target_status = ""
+    order_id = ""
+    if data.startswith("set_status:"):
+        parts = data.split(":", 2)
+        if len(parts) != 3:
+            await _telegram_answer_callback(cb_id, "Action inconnue.")
+            return {"ok": True}
+        _, order_id, target_status = parts
+    else:
+        action, order_id = data.split(":", 1)
+        target_status = {"done": "Terminée", "cancel": "Annulée", "reopen": "En cours"}.get(action, "")
+        if not target_status:
+            await _telegram_answer_callback(cb_id, "Action inconnue.")
+            return {"ok": True}
 
     before_doc = await db.orders.find_one({"id": order_id}, {"_id": 0})
     if not before_doc:
         await _telegram_answer_callback(cb_id, "Commande introuvable.")
+        return {"ok": True}
+    target_status = normalize_status(target_status, before_doc.get("delivery_mode", "delivery"))
+    if target_status not in ADMIN_STATUS_CHOICES:
+        await _telegram_answer_callback(cb_id, "Statut invalide.")
         return {"ok": True}
 
     prev_status = with_status(dict(before_doc)).get("status")
@@ -1838,9 +1892,11 @@ async def telegram_webhook(request: Request):
         logger.warning("[telegram] customer dm on webhook: %s", e)
 
     feedback = {
-        "Terminée": "✅ Commande marquée comme terminée",
-        "Annulée": "❌ Commande annulée (stock restitué)",
         "En cours": "🔄 Commande remise en cours",
+        "En préparation": "👨‍🍳 Commande en préparation",
+        "Commande prête": "✅ Commande prête (sur place)",
+        "Commande au point de livraison": "🚚 Commande au point de livraison",
+        "Annulée": "❌ Commande annulée (stock restitué)",
     }[target_status]
     await _telegram_answer_callback(cb_id, feedback)
     return {"ok": True}
