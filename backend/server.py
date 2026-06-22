@@ -447,6 +447,17 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
 
+async def _get_telegram_config() -> tuple[str, str]:
+    """Read Telegram config from DB first, fall back to env."""
+    doc = await db.app_config.find_one({"_id": "telegram"})
+    if doc:
+        token = (doc.get("bot_token") or "").strip()
+        chat_id = (doc.get("chat_id") or "").strip()
+        if token and chat_id:
+            return token, chat_id
+    return TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+
+
 def _esc(s) -> str:
     return html_lib.escape(str(s or ""), quote=False)
 
@@ -484,12 +495,13 @@ def _format_order_html(order: Order) -> str:
 
 
 async def send_telegram_order_notification(order: Order) -> None:
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+    token, chat_id = await _get_telegram_config()
+    if not token or not chat_id:
         logger.info("[telegram] skip: bot token or chat id not configured")
         return
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
+        "chat_id": chat_id,
         "text": _format_order_html(order),
         "parse_mode": "HTML",
         "disable_web_page_preview": True,
@@ -501,6 +513,19 @@ async def send_telegram_order_notification(order: Order) -> None:
                 logger.warning("[telegram] non-200 (%s): %s", r.status_code, r.text[:300])
     except Exception as e:
         logger.warning("[telegram] error: %s", e)
+
+
+class TelegramConfigIn(BaseModel):
+    bot_token: str
+    chat_id: str = ""
+
+
+def _mask_token(t: str) -> str:
+    if not t:
+        return ""
+    if len(t) <= 8:
+        return "•" * len(t)
+    return f"{t[:6]}…{t[-4:]}"
 
 
 # ====================================================================
@@ -793,6 +818,75 @@ async def admin_update_order(order_id: str, payload: OrderStatusUpdate, _admin: 
         raise HTTPException(status_code=404, detail="Commande introuvable")
     updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
     return with_status(updated)
+
+
+@api_router.get("/admin/telegram")
+async def admin_get_telegram(_admin: dict = Depends(require_admin)):
+    doc = await db.app_config.find_one({"_id": "telegram"}) or {}
+    return {
+        "bot_token_masked": _mask_token(doc.get("bot_token", "")),
+        "has_token": bool(doc.get("bot_token")),
+        "chat_id": doc.get("chat_id", ""),
+    }
+
+
+@api_router.post("/admin/telegram")
+async def admin_save_telegram(payload: TelegramConfigIn, _admin: dict = Depends(require_admin)):
+    update: dict = {}
+    if payload.bot_token.strip():
+        update["bot_token"] = payload.bot_token.strip()
+    update["chat_id"] = payload.chat_id.strip()
+    await db.app_config.update_one({"_id": "telegram"}, {"$set": update}, upsert=True)
+    return {"status": "ok"}
+
+
+@api_router.post("/admin/telegram/discover")
+async def admin_discover_chat(_admin: dict = Depends(require_admin)):
+    """Call Telegram getUpdates and return any chat_ids the bot has been talking to."""
+    doc = await db.app_config.find_one({"_id": "telegram"}) or {}
+    token = (doc.get("bot_token") or "").strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Enregistrez d'abord le token du bot.")
+    url = f"https://api.telegram.org/bot{token}/getUpdates"
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as c:
+            r = await c.get(url)
+            data = r.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Telegram inaccessible : {e}")
+    if not data.get("ok"):
+        raise HTTPException(status_code=400, detail=data.get("description") or "Token invalide")
+    chats: dict[str, dict] = {}
+    for upd in data.get("result", []):
+        msg = upd.get("message") or upd.get("channel_post") or {}
+        chat = msg.get("chat")
+        if chat and chat.get("id") is not None:
+            cid = str(chat["id"])
+            chats[cid] = {
+                "id": cid,
+                "type": chat.get("type"),
+                "title": chat.get("title") or chat.get("first_name") or "",
+            }
+    return {"chats": list(chats.values())}
+
+
+@api_router.post("/admin/telegram/test")
+async def admin_test_telegram(_admin: dict = Depends(require_admin)):
+    token, chat_id = await _get_telegram_config()
+    if not token or not chat_id:
+        raise HTTPException(status_code=400, detail="Configurez d'abord le bot et le chat.")
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    text = "✅ <b>Test réussi !</b>\nVotre boutique CBD est bien connectée à ce chat. Vous recevrez chaque nouvelle commande ici."
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as c:
+            r = await c.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"})
+            if r.status_code != 200:
+                raise HTTPException(status_code=400, detail=r.json().get("description") or r.text)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Erreur réseau : {e}")
+    return {"status": "ok"}
 
 
 app.include_router(api_router)

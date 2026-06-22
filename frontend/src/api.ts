@@ -176,4 +176,20 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ status }),
     }),
+  adminGetTelegram: () =>
+    request<{ bot_token_masked: string; has_token: boolean; chat_id: string }>(
+      `/admin/telegram`,
+    ),
+  adminSaveTelegram: (bot_token: string, chat_id: string) =>
+    request<{ status: string }>(`/admin/telegram`, {
+      method: "POST",
+      body: JSON.stringify({ bot_token, chat_id }),
+    }),
+  adminDiscoverChats: () =>
+    request<{ chats: { id: string; type?: string; title?: string }[] }>(
+      `/admin/telegram/discover`,
+      { method: "POST" },
+    ),
+  adminTestTelegram: () =>
+    request<{ status: string }>(`/admin/telegram/test`, { method: "POST" }),
 };
