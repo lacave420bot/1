@@ -20,6 +20,7 @@ from datetime import datetime, timezone, timedelta
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+# v1.0.3
 
 ORDER_STATUSES = ["En cours", "En préparation"]
 ADMIN_STATUS_CHOICES = [
