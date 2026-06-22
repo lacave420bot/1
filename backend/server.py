@@ -524,12 +524,6 @@ async def create_order(payload: OrderIn):
         except Exception as e:
             logger.warning("[telegram] low-stock alert error: %s", e)
 
-    # Send confirmation email to the customer if email was provided
-    try:
-        await send_status_email(order, "En cours")
-    except Exception as e:
-        logger.warning("[resend] confirmation email error: %s", e)
-
     return order
 
 
@@ -1137,16 +1131,7 @@ async def admin_update_order(order_id: str, payload: OrderStatusUpdate, _admin: 
         await _decrement_order_items(before_doc.get("items") or [])
 
     updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
-    updated_order = with_status(updated)
-
-    # Send a status-change email if status actually changed
-    if new_status != prev_status:
-        try:
-            await send_status_email(Order(**updated_order), new_status)
-        except Exception as e:
-            logger.warning("[resend] status email error: %s", e)
-
-    return updated_order
+    return with_status(updated)
 
 
 async def _restock_order_items(items: list) -> None:
