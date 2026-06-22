@@ -1,9 +1,10 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Query, Depends, status
+from fastapi import FastAPI, APIRouter, HTTPException, Query, Depends, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import secrets
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field
@@ -771,14 +772,92 @@ async def send_telegram_order_notification(order: Order) -> None:
         "text": _format_order_html(order),
         "parse_mode": "HTML",
         "disable_web_page_preview": True,
+        "reply_markup": _order_action_keyboard(order.id, order.status or "En cours"),
     }
     try:
         async with httpx.AsyncClient(timeout=8.0) as client_h:
             r = await client_h.post(url, json=payload)
             if r.status_code != 200:
                 logger.warning("[telegram] non-200 (%s): %s", r.status_code, r.text[:300])
+            else:
+                # Store message_id in DB so we can edit it later when status changes
+                try:
+                    data = r.json()
+                    msg_id = data.get("result", {}).get("message_id")
+                    if msg_id:
+                        await db.orders.update_one(
+                            {"id": order.id},
+                            {"$set": {"telegram_message_id": msg_id, "telegram_chat_id": str(chat_id)}},
+                        )
+                except Exception as e:
+                    logger.warning("[telegram] failed to persist message_id: %s", e)
     except Exception as e:
         logger.warning("[telegram] error: %s", e)
+
+
+def _order_action_keyboard(order_id: str, current_status: str) -> dict:
+    """Build the inline keyboard shown under each order notification."""
+    is_done = current_status == "Terminée"
+    is_cancelled = current_status == "Annulée"
+    row1 = []
+    if not is_done:
+        row1.append({"text": "✅ Terminer", "callback_data": f"done:{order_id}"})
+    if not is_cancelled:
+        row1.append({"text": "❌ Annuler", "callback_data": f"cancel:{order_id}"})
+    if is_done or is_cancelled:
+        row1.append({"text": "🔄 Remettre en cours", "callback_data": f"reopen:{order_id}"})
+    return {"inline_keyboard": [row1]}
+
+
+async def _telegram_edit_order_message(order: Order) -> None:
+    """Edit the existing Telegram message attached to an order to reflect the new status."""
+    raw = await db.orders.find_one({"id": order.id}, {"_id": 0, "telegram_message_id": 1, "telegram_chat_id": 1})
+    if not raw:
+        return
+    msg_id = raw.get("telegram_message_id")
+    chat_id = raw.get("telegram_chat_id")
+    if not msg_id or not chat_id:
+        return
+    token, _ = await _get_telegram_config()
+    if not token:
+        return
+    status_line = ""
+    if order.status == "Terminée":
+        status_line = "\n\n✅ <b>Marquée comme TERMINÉE</b>"
+    elif order.status == "Annulée":
+        status_line = "\n\n❌ <b>Marquée comme ANNULÉE</b>"
+    else:
+        status_line = "\n\n🔄 <b>Remise EN COURS</b>"
+    new_text = _format_order_html(order) + status_line
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client_h:
+            await client_h.post(
+                f"https://api.telegram.org/bot{token}/editMessageText",
+                json={
+                    "chat_id": chat_id,
+                    "message_id": msg_id,
+                    "text": new_text,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True,
+                    "reply_markup": _order_action_keyboard(order.id, order.status or "En cours"),
+                },
+            )
+    except Exception as e:
+        logger.warning("[telegram] edit error: %s", e)
+
+
+async def _telegram_answer_callback(callback_id: str, text: str = "") -> None:
+    token, _ = await _get_telegram_config()
+    if not token:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client_h:
+            await client_h.post(
+                f"https://api.telegram.org/bot{token}/answerCallbackQuery",
+                json={"callback_query_id": callback_id, "text": text},
+            )
+    except Exception as e:
+        logger.warning("[telegram] answer cb error: %s", e)
 
 
 async def send_low_stock_alert(alerts: list[dict]) -> None:
@@ -1131,7 +1210,16 @@ async def admin_update_order(order_id: str, payload: OrderStatusUpdate, _admin: 
         await _decrement_order_items(before_doc.get("items") or [])
 
     updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
-    return with_status(updated)
+    updated_order = with_status(updated)
+
+    # Update the Telegram message reflecting the new status (if it has one)
+    if new_status != prev_status:
+        try:
+            await _telegram_edit_order_message(Order(**updated_order))
+        except Exception as e:
+            logger.warning("[telegram] edit on status change: %s", e)
+
+    return updated_order
 
 
 async def _restock_order_items(items: list) -> None:
@@ -1272,8 +1360,129 @@ async def admin_test_telegram(_admin: dict = Depends(require_admin)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Erreur réseau : {e}")
+        raise HTTPException(status_code=502, detail=f"Erreur réseau : {e}") from e
     return {"status": "ok"}
+
+
+# ---------------- Telegram inline-keyboard webhook ----------------
+
+BACKEND_BASE_URL = (os.getenv("BACKEND_BASE_URL", "") or "").rstrip("/")
+
+
+async def _ensure_webhook_secret() -> str:
+    """Return the configured webhook secret, generating one if missing."""
+    doc = await db.app_config.find_one({"_id": "telegram"}) or {}
+    secret = (doc.get("webhook_secret") or "").strip()
+    if not secret:
+        secret = secrets.token_urlsafe(24)
+        await db.app_config.update_one(
+            {"_id": "telegram"},
+            {"$set": {"webhook_secret": secret}},
+            upsert=True,
+        )
+    return secret
+
+
+@api_router.post("/admin/telegram/setup-webhook")
+async def admin_setup_telegram_webhook(_admin: dict = Depends(require_admin)):
+    """Register the webhook URL with Telegram so the bot forwards button clicks."""
+    token, chat_id = await _get_telegram_config()
+    if not token:
+        raise HTTPException(status_code=400, detail="Configurez d'abord le bot Telegram.")
+    if not BACKEND_BASE_URL:
+        raise HTTPException(status_code=500, detail="BACKEND_BASE_URL non configuré côté serveur.")
+    secret = await _ensure_webhook_secret()
+    webhook_url = f"{BACKEND_BASE_URL}/api/telegram/webhook"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as c:
+            r = await c.post(
+                f"https://api.telegram.org/bot{token}/setWebhook",
+                json={
+                    "url": webhook_url,
+                    "secret_token": secret,
+                    "allowed_updates": ["callback_query"],
+                },
+            )
+            data = r.json()
+            if not data.get("ok"):
+                raise HTTPException(status_code=400, detail=data.get("description") or r.text)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Erreur réseau : {e}") from e
+    return {"status": "ok", "webhook_url": webhook_url}
+
+
+@api_router.post("/telegram/webhook")
+async def telegram_webhook(request: Request):
+    """Receives callback_query updates from Telegram (button taps)."""
+    # Validate Telegram's secret header
+    expected = await _ensure_webhook_secret()
+    incoming = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    if not incoming or incoming != expected:
+        # Silently 200 so misconfigured Telegram doesn't keep retrying forever
+        return {"ok": True}
+
+    try:
+        update = await request.json()
+    except Exception:
+        return {"ok": True}
+
+    cb = update.get("callback_query")
+    if not cb:
+        return {"ok": True}
+
+    data = (cb.get("data") or "").strip()
+    cb_id = cb.get("id")
+    from_chat = str(((cb.get("message") or {}).get("chat") or {}).get("id") or "")
+
+    # Only react to clicks coming from the configured chat
+    _, configured_chat = await _get_telegram_config()
+    if configured_chat and from_chat and from_chat != str(configured_chat):
+        await _telegram_answer_callback(cb_id, "Action refusée (chat non autorisé).")
+        return {"ok": True}
+
+    if ":" not in data:
+        await _telegram_answer_callback(cb_id, "Action inconnue.")
+        return {"ok": True}
+
+    action, order_id = data.split(":", 1)
+    target_status = {"done": "Terminée", "cancel": "Annulée", "reopen": "En cours"}.get(action)
+    if not target_status:
+        await _telegram_answer_callback(cb_id, "Action inconnue.")
+        return {"ok": True}
+
+    before_doc = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not before_doc:
+        await _telegram_answer_callback(cb_id, "Commande introuvable.")
+        return {"ok": True}
+
+    prev_status = with_status(dict(before_doc)).get("status")
+    if prev_status == target_status:
+        await _telegram_answer_callback(cb_id, f"Déjà « {target_status} ».")
+        return {"ok": True}
+
+    await db.orders.update_one({"id": order_id}, {"$set": {"manual_status": target_status}})
+
+    if target_status == "Annulée" and prev_status != "Annulée":
+        await _restock_order_items(before_doc.get("items") or [])
+    elif prev_status == "Annulée" and target_status != "Annulée":
+        await _decrement_order_items(before_doc.get("items") or [])
+
+    updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    updated_order = with_status(updated)
+    try:
+        await _telegram_edit_order_message(Order(**updated_order))
+    except Exception as e:
+        logger.warning("[telegram] edit on webhook: %s", e)
+
+    feedback = {
+        "Terminée": "✅ Commande marquée comme terminée",
+        "Annulée": "❌ Commande annulée (stock restitué)",
+        "En cours": "🔄 Commande remise en cours",
+    }[target_status]
+    await _telegram_answer_callback(cb_id, feedback)
+    return {"ok": True}
 
 
 # ---------------- Public: promo validation ----------------

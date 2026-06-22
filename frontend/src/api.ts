@@ -229,6 +229,8 @@ export const api = {
     ),
   adminTestTelegram: () =>
     request<{ status: string }>(`/admin/telegram/test`, { method: "POST" }),
+  adminSetupTelegramWebhook: () =>
+    request<{ status: string; webhook_url: string }>(`/admin/telegram/setup-webhook`, { method: "POST" }),
 
   validatePromo: (code: string, subtotal: number) =>
     request<PromoValidateResult>(`/promo/validate`, {

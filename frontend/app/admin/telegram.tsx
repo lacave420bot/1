@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -22,7 +22,7 @@ type Chat = { id: string; type?: string; title?: string };
 
 export default function AdminTelegramScreen() {
   const router = useRouter();
-  const { isAuthenticated } = useAdmin();
+  const { isAuthenticated, ready: adminReady } = useAdmin();
   const [tokenInput, setTokenInput] = useState("");
   const [chatId, setChatId] = useState("");
   const [maskedToken, setMaskedToken] = useState("");
@@ -31,6 +31,7 @@ export default function AdminTelegramScreen() {
   const [saving, setSaving] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [settingUpWebhook, setSettingUpWebhook] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const loadConfig = useCallback(async () => {
@@ -48,7 +49,11 @@ export default function AdminTelegramScreen() {
 
   useFocusEffect(useCallback(() => { loadConfig(); }, [loadConfig]));
 
-  if (!isAuthenticated) { router.replace("/admin/login"); return null; }
+  useEffect(() => {
+    if (adminReady && !isAuthenticated) router.replace("/admin/login");
+  }, [adminReady, isAuthenticated, router]);
+
+  if (!adminReady || !isAuthenticated) { return null; }
 
   const saveToken = async () => {
     if (!tokenInput.trim()) {
@@ -120,6 +125,19 @@ export default function AdminTelegramScreen() {
     } catch (e: any) {
       setMsg({ kind: "err", text: e?.message || "Erreur" });
     } finally { setTesting(false); }
+  };
+
+  const setupWebhook = async () => {
+    try {
+      setSettingUpWebhook(true); setMsg(null);
+      await api.adminSetupTelegramWebhook();
+      setMsg({
+        kind: "ok",
+        text: "Boutons rapides activés ✅ Vous pouvez maintenant cliquer sur ✅ Terminer / ❌ Annuler directement dans Telegram.",
+      });
+    } catch (e: any) {
+      setMsg({ kind: "err", text: e?.message || "Erreur" });
+    } finally { setSettingUpWebhook(false); }
   };
 
   return (
@@ -250,6 +268,30 @@ export default function AdminTelegramScreen() {
                 <View style={{ flexDirection: "row", gap: spacing.sm, alignItems: "center" }}>
                   <Ionicons name="paper-plane" size={18} color="#fff" />
                   <Text style={styles.btnText}>Envoyer un message de test</Text>
+                </View>
+              )}
+            </Pressable>
+          </View>
+
+          {/* Step 4: enable inline buttons */}
+          <View style={styles.section}>
+            <View style={styles.stepHeader}>
+              <View style={styles.stepNum}><Text style={styles.stepNumText}>4</Text></View>
+              <Text style={styles.sectionTitle}>Boutons rapides ⚡</Text>
+            </View>
+            <Text style={styles.help}>
+              Activez les boutons « ✅ Terminer » et « ❌ Annuler » directement dans Telegram. Vous gérez vos commandes sans ouvrir l&apos;app !
+            </Text>
+            <Pressable
+              style={[styles.btn, (settingUpWebhook || !maskedToken || !chatId) && { opacity: 0.5 }]}
+              onPress={setupWebhook}
+              disabled={settingUpWebhook || !maskedToken || !chatId}
+              testID="tg-setup-webhook"
+            >
+              {settingUpWebhook ? <ActivityIndicator color="#fff" /> : (
+                <View style={{ flexDirection: "row", gap: spacing.sm, alignItems: "center" }}>
+                  <Ionicons name="flash" size={18} color="#fff" />
+                  <Text style={styles.btnText}>Activer les boutons rapides</Text>
                 </View>
               )}
             </Pressable>
