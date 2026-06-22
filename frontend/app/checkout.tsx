@@ -16,6 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api } from "@/src/api";
 import { useCart, formatPrice } from "@/src/store/cart";
+import { useUser } from "@/src/store/user";
 import { colors, font, radius, shadows, spacing } from "@/src/theme";
 
 type DeliveryMode = "delivery" | "pickup";
@@ -26,10 +27,11 @@ export default function CheckoutScreen() {
     items, subtotal, discount, total, guestId, clear,
     promoCode, promoError, promoValidating, applyPromo, clearPromo,
   } = useCart();
+  const { user } = useUser();
 
   const [mode, setMode] = useState<DeliveryMode>("delivery");
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
+  const [name, setName] = useState(user?.name || "");
+  const [phone, setPhone] = useState(user?.phone || "");
   const [address, setAddress] = useState("");
   const [notes, setNotes] = useState("");
   const [promoInput, setPromoInput] = useState("");

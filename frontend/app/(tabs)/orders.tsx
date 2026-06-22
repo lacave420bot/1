@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api, type Order } from "@/src/api";
 import { useCart, formatPrice } from "@/src/store/cart";
+import { useUser } from "@/src/store/user";
 import { colors, font, radius, shadows, spacing } from "@/src/theme";
 
 function formatDate(iso: string): string {
@@ -33,6 +34,7 @@ function formatDate(iso: string): string {
 export default function OrdersScreen() {
   const router = useRouter();
   const { guestId, ready } = useCart();
+  const { isAuthenticated, user } = useUser();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -62,8 +64,21 @@ export default function OrdersScreen() {
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Mes commandes</Text>
-          <Text style={styles.headerSub}>Historique de cet appareil</Text>
+          <Text style={styles.headerSub}>
+            {isAuthenticated && user ? `Connecté · ${user.name || ""}` : "Historique de cet appareil"}
+          </Text>
         </View>
+        {!isAuthenticated && (
+          <Pressable
+            style={styles.loginBtn}
+            onPress={() => router.push("/login")}
+            testID="orders-login-shortcut"
+            hitSlop={8}
+          >
+            <Ionicons name="paper-plane" size={14} color="#2AABEE" />
+            <Text style={styles.loginBtnText}>Connexion</Text>
+          </Pressable>
+        )}
         <Pressable
           style={styles.adminBtn}
           onPress={() => router.push("/admin/orders")}
@@ -210,6 +225,19 @@ const styles = StyleSheet.create({
     borderColor: colors.brand,
   },
   adminBtnText: { color: colors.brand, fontWeight: "700", fontSize: font.sm },
+  loginBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#0E2733",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: "#2AABEE",
+    marginRight: spacing.xs,
+  },
+  loginBtnText: { color: "#2AABEE", fontWeight: "700", fontSize: font.sm },
   center: {
     flex: 1,
     alignItems: "center",

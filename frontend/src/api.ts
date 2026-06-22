@@ -100,6 +100,26 @@ export type AdminToken = {
   expires_hours: number;
 };
 
+export type CurrentUser = {
+  id: string;
+  name: string;
+  phone?: string;
+  telegram_username?: string | null;
+};
+
+export type TelegramLoginStart = {
+  token: string;
+  telegram_url: string;
+  expires_in: number;
+};
+
+export type TelegramLoginCheck =
+  | { status: "pending" }
+  | { status: "expired" }
+  | { status: "invalid" }
+  | { status: "consumed" }
+  | { status: "approved"; token: string; user: CurrentUser };
+
 let adminToken: string | null = null;
 export function setAdminToken(t: string | null) {
   adminToken = t;
@@ -108,9 +128,23 @@ export function getAdminToken(): string | null {
   return adminToken;
 }
 
+let userToken: string | null = null;
+export function setUserToken(t: string | null) {
+  userToken = t;
+}
+export function getUserToken(): string | null {
+  return userToken;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (adminToken) headers["Authorization"] = `Bearer ${adminToken}`;
+  // Admin token takes priority on admin paths, otherwise prefer the user token.
+  const useAdminAuth = path.startsWith("/admin");
+  if (useAdminAuth && adminToken) {
+    headers["Authorization"] = `Bearer ${adminToken}`;
+  } else if (!useAdminAuth && userToken) {
+    headers["Authorization"] = `Bearer ${userToken}`;
+  }
   // Merge with caller-provided headers
   const callerHeaders = (init?.headers as Record<string, string>) || {};
   const res = await fetch(`${BASE_URL}/api${path}`, {
@@ -130,6 +164,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  setUserToken,
+  getUserToken,
+
+  // ---- Customer auth (Telegram Magic Link) ----
+  authStartTelegram: (guest_id: string) =>
+    request<TelegramLoginStart>(`/auth/telegram/start`, {
+      method: "POST",
+      body: JSON.stringify({ guest_id }),
+    }),
+  authCheckTelegram: (token: string) =>
+    request<TelegramLoginCheck>(`/auth/telegram/check?token=${encodeURIComponent(token)}`),
+  getCurrentUser: () => request<CurrentUser>(`/auth/me`),
+  getBotUsername: () => request<{ bot_username: string }>(`/auth/telegram/bot`),
+
   getCategories: () => request<Category[]>("/categories"),
   getProducts: (params: {
     category_id?: string;

@@ -143,6 +143,55 @@ class CartItemIn(BaseModel):
     variant_label: Optional[str] = None
 
 
+# ---------------- Customer (Telegram-linked) user model ----------------
+
+class User(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    telegram_user_id: int
+    telegram_username: Optional[str] = None
+    name: str = ""
+    phone: str = ""
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    last_login_at: Optional[str] = None
+
+
+USER_JWT_SECRET = os.getenv("USER_JWT_SECRET", os.getenv("JWT_SECRET", "change-me-cave420-user"))
+USER_JWT_ALG = "HS256"
+USER_JWT_EXP_DAYS = 90
+
+
+def issue_user_token(user_id: str) -> str:
+    payload = {
+        "sub": user_id,
+        "scope": "user",
+        "iat": int(datetime.now(timezone.utc).timestamp()),
+        "exp": int((datetime.now(timezone.utc) + timedelta(days=USER_JWT_EXP_DAYS)).timestamp()),
+    }
+    return pyjwt.encode(payload, USER_JWT_SECRET, algorithm=USER_JWT_ALG)
+
+
+def decode_user_token(token: str) -> Optional[str]:
+    try:
+        payload = pyjwt.decode(token, USER_JWT_SECRET, algorithms=[USER_JWT_ALG])
+        if payload.get("scope") != "user":
+            return None
+        return payload.get("sub")
+    except Exception:
+        return None
+
+
+async def get_current_user_optional(request: Request) -> Optional[dict]:
+    auth = request.headers.get("Authorization") or ""
+    if not auth.lower().startswith("bearer "):
+        return None
+    token = auth.split(" ", 1)[1].strip()
+    user_id = decode_user_token(token)
+    if not user_id:
+        return None
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    return user
+
+
 class OrderIn(BaseModel):
     guest_id: str
     customer_name: str
@@ -169,6 +218,7 @@ class OrderItem(BaseModel):
 class Order(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     guest_id: str
+    user_id: Optional[str] = None
     customer_name: str
     address: str
     phone: str
@@ -385,9 +435,12 @@ async def get_product(product_id: str):
 
 
 @api_router.post("/orders", response_model=Order)
-async def create_order(payload: OrderIn):
+async def create_order(payload: OrderIn, request: Request):
     if not payload.items:
         raise HTTPException(status_code=400, detail="Le panier est vide")
+
+    # Optionally attach to an authenticated customer
+    current_user = await get_current_user_optional(request)
 
     delivery_mode = (payload.delivery_mode or "delivery").strip().lower()
     if delivery_mode not in ("delivery", "pickup"):
@@ -468,6 +521,7 @@ async def create_order(payload: OrderIn):
 
     order = Order(
         guest_id=payload.guest_id,
+        user_id=(current_user["id"] if current_user else None),
         customer_name=payload.customer_name,
         address=payload.address.strip() if delivery_mode == "delivery" else "",
         phone=payload.phone,
@@ -537,8 +591,18 @@ async def get_loyalty(guest_id: str):
 
 
 @api_router.get("/orders", response_model=List[Order])
-async def list_orders(guest_id: str = Query(...)):
-    items = await db.orders.find({"guest_id": guest_id}, {"_id": 0}).sort("created_at", -1).to_list(200)
+async def list_orders(request: Request, guest_id: str = Query(...)):
+    # If the caller is authenticated, return all of their orders
+    # (by user_id) plus any guest-bound ones with this guest_id.
+    current_user = await get_current_user_optional(request)
+    if current_user:
+        query: dict = {"$or": [
+            {"user_id": current_user["id"]},
+            {"guest_id": guest_id},
+        ]}
+    else:
+        query = {"guest_id": guest_id}
+    items = await db.orders.find(query, {"_id": 0}).sort("created_at", -1).to_list(200)
     return [with_status(o) for o in items]
 
 
@@ -1403,22 +1467,31 @@ async def _ensure_webhook_secret() -> str:
 
 @api_router.post("/admin/telegram/setup-webhook")
 async def admin_setup_telegram_webhook(_admin: dict = Depends(require_admin)):
-    """Register the webhook URL with Telegram so the bot forwards button clicks."""
-    token, chat_id = await _get_telegram_config()
+    """Register the webhook URL with Telegram so the bot forwards button clicks
+    and /start messages used for the customer Magic Link login flow."""
+    token, _ = await _get_telegram_config()
     if not token:
         raise HTTPException(status_code=400, detail="Configurez d'abord le bot Telegram.")
     if not BACKEND_BASE_URL:
         raise HTTPException(status_code=500, detail="BACKEND_BASE_URL non configuré côté serveur.")
     secret = await _ensure_webhook_secret()
     webhook_url = f"{BACKEND_BASE_URL}/api/telegram/webhook"
+
+    bot_username = ""
     try:
         async with httpx.AsyncClient(timeout=10.0) as c:
+            # Fetch bot identity (username) so the frontend can build t.me/<username> links
+            me = await c.get(f"https://api.telegram.org/bot{token}/getMe")
+            me_data = me.json()
+            if me_data.get("ok"):
+                bot_username = me_data.get("result", {}).get("username") or ""
+            # Register webhook
             r = await c.post(
                 f"https://api.telegram.org/bot{token}/setWebhook",
                 json={
                     "url": webhook_url,
                     "secret_token": secret,
-                    "allowed_updates": ["callback_query"],
+                    "allowed_updates": ["callback_query", "message"],
                 },
             )
             data = r.json()
@@ -1428,22 +1501,37 @@ async def admin_setup_telegram_webhook(_admin: dict = Depends(require_admin)):
         raise
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Erreur réseau : {e}") from e
-    return {"status": "ok", "webhook_url": webhook_url}
+
+    # Persist bot username for the frontend to build t.me URLs
+    if bot_username:
+        await db.app_config.update_one(
+            {"_id": "telegram"},
+            {"$set": {"bot_username": bot_username}},
+            upsert=True,
+        )
+
+    return {"status": "ok", "webhook_url": webhook_url, "bot_username": bot_username}
 
 
 @api_router.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
-    """Receives callback_query updates from Telegram (button taps)."""
-    # Validate Telegram's secret header
+    """Receives callback_query updates and /start <login_token> messages from Telegram."""
     expected = await _ensure_webhook_secret()
     incoming = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
     if not incoming or incoming != expected:
-        # Silently 200 so misconfigured Telegram doesn't keep retrying forever
         return {"ok": True}
 
     try:
         update = await request.json()
     except Exception:
+        return {"ok": True}
+
+    # ---- Handle /start <token> messages for customer login ----
+    msg = update.get("message")
+    if msg:
+        text = (msg.get("text") or "").strip()
+        if text.startswith("/start"):
+            await _handle_telegram_start(msg, text)
         return {"ok": True}
 
     cb = update.get("callback_query")
@@ -1454,7 +1542,6 @@ async def telegram_webhook(request: Request):
     cb_id = cb.get("id")
     from_chat = str(((cb.get("message") or {}).get("chat") or {}).get("id") or "")
 
-    # Only react to clicks coming from the configured chat
     _, configured_chat = await _get_telegram_config()
     if configured_chat and from_chat and from_chat != str(configured_chat):
         await _telegram_answer_callback(cb_id, "Action refusée (chat non autorisé).")
@@ -1530,6 +1617,196 @@ async def promo_validate(payload: PromoValidateIn):
     if err:
         return PromoValidateOut(valid=False, error=err)
     return PromoValidateOut(valid=True, code=code, kind=promo.get("kind"), discount=d)
+
+
+# ---------------- Customer auth (Telegram Magic Link) ----------------
+
+
+async def _telegram_send_message(chat_id: int, text: str) -> None:
+    token, _ = await _get_telegram_config()
+    if not token:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as c:
+            await c.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+            )
+    except Exception as e:
+        logger.warning("[telegram] private msg error: %s", e)
+
+
+async def _handle_telegram_start(msg: dict, text: str) -> None:
+    """Handle /start [<login_token>] messages. If a login token is provided and valid,
+    bind this Telegram user to the pending login attempt."""
+    from_user = msg.get("from") or {}
+    tg_user_id = from_user.get("id")
+    chat_id = (msg.get("chat") or {}).get("id")
+    if not tg_user_id or not chat_id:
+        return
+
+    parts = text.split(maxsplit=1)
+    arg = parts[1].strip() if len(parts) > 1 else ""
+
+    # No login token → just acknowledge the user
+    if not arg:
+        await _telegram_send_message(
+            chat_id,
+            "👋 <b>Bonjour !</b>\nCe bot est utilisé pour vous connecter à <b>La Cave 420</b>. "
+            "Retournez à l'application et appuyez sur <b>« Se connecter avec Telegram »</b>.",
+        )
+        return
+
+    # Validate the login attempt
+    attempt = await db.login_attempts.find_one({"token": arg})
+    if not attempt:
+        await _telegram_send_message(chat_id, "❌ Lien de connexion invalide ou expiré. Réessayez depuis l'app.")
+        return
+    if attempt.get("status") != "pending":
+        await _telegram_send_message(chat_id, "Cette session est déjà utilisée. Relancez la connexion depuis l'app.")
+        return
+    try:
+        exp = attempt.get("expires_at")
+        if exp and datetime.fromisoformat(exp) < datetime.now(timezone.utc):
+            await db.login_attempts.update_one({"token": arg}, {"$set": {"status": "expired"}})
+            await _telegram_send_message(chat_id, "⏰ Lien expiré. Relancez la connexion depuis l'app.")
+            return
+    except Exception:
+        pass
+
+    # Find or create the user record
+    name = (from_user.get("first_name") or "") + (
+        f" {from_user.get('last_name')}" if from_user.get("last_name") else ""
+    )
+    name = name.strip()
+    username = from_user.get("username")
+
+    existing = await db.users.find_one({"telegram_user_id": tg_user_id}, {"_id": 0})
+    if existing:
+        user = existing
+        await db.users.update_one(
+            {"id": user["id"]},
+            {"$set": {
+                "name": name or user.get("name", ""),
+                "telegram_username": username,
+                "last_login_at": datetime.now(timezone.utc).isoformat(),
+            }},
+        )
+    else:
+        user = User(
+            telegram_user_id=tg_user_id,
+            telegram_username=username,
+            name=name,
+        ).dict()
+        user["last_login_at"] = datetime.now(timezone.utc).isoformat()
+        await db.users.insert_one(user)
+
+    # Link existing guest orders (associated with the guest_id stored on the attempt)
+    guest_id = attempt.get("guest_id")
+    if guest_id:
+        await db.orders.update_many(
+            {"guest_id": guest_id},
+            {"$set": {"user_id": user["id"]}},
+        )
+
+    # Mark login attempt as approved + persist Telegram user id
+    await db.login_attempts.update_one(
+        {"token": arg},
+        {"$set": {
+            "status": "approved",
+            "user_id": user["id"],
+            "telegram_user_id": tg_user_id,
+            "approved_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+
+    await _telegram_send_message(
+        chat_id,
+        f"✅ <b>Connecté !</b>\nBonjour {_esc(name or 'à toi')} 👋\n"
+        f"Tu peux retourner sur <b>La Cave 420</b>, ton compte est prêt.",
+    )
+
+
+@api_router.get("/auth/telegram/bot")
+async def auth_get_bot_username():
+    """Public: returns the configured bot username so the app can build a t.me link."""
+    doc = await db.app_config.find_one({"_id": "telegram"}) or {}
+    return {"bot_username": (doc.get("bot_username") or "").strip()}
+
+
+class TelegramLoginStartIn(BaseModel):
+    guest_id: Optional[str] = ""
+
+
+@api_router.post("/auth/telegram/start")
+async def auth_telegram_start(payload: TelegramLoginStartIn):
+    """Create a new login attempt and return the t.me deep link for the customer."""
+    doc = await db.app_config.find_one({"_id": "telegram"}) or {}
+    bot_username = (doc.get("bot_username") or "").strip()
+    if not bot_username:
+        raise HTTPException(status_code=400, detail="Bot Telegram non configuré. Demandez à la boutique.")
+    token = secrets.token_urlsafe(20)
+    now = datetime.now(timezone.utc)
+    await db.login_attempts.insert_one({
+        "token": token,
+        "status": "pending",
+        "guest_id": (payload.guest_id or "").strip(),
+        "created_at": now.isoformat(),
+        "expires_at": (now + timedelta(minutes=10)).isoformat(),
+    })
+    return {
+        "token": token,
+        "telegram_url": f"https://t.me/{bot_username}?start={token}",
+        "expires_in": 600,
+    }
+
+
+@api_router.get("/auth/telegram/check")
+async def auth_telegram_check(token: str):
+    """Polled by the app while the user authorises the login from Telegram."""
+    attempt = await db.login_attempts.find_one({"token": token}, {"_id": 0})
+    if not attempt:
+        return {"status": "invalid"}
+    s = attempt.get("status")
+    if s == "pending":
+        try:
+            exp = datetime.fromisoformat(attempt.get("expires_at") or "")
+            if exp < datetime.now(timezone.utc):
+                await db.login_attempts.update_one({"token": token}, {"$set": {"status": "expired"}})
+                return {"status": "expired"}
+        except Exception:
+            pass
+        return {"status": "pending"}
+    if s == "approved":
+        user = await db.users.find_one({"id": attempt.get("user_id")}, {"_id": 0})
+        if not user:
+            return {"status": "invalid"}
+        jwt_token = issue_user_token(user["id"])
+        # One-shot: mark consumed so it cannot be re-checked
+        await db.login_attempts.update_one({"token": token}, {"$set": {"status": "consumed"}})
+        return {
+            "status": "approved",
+            "token": jwt_token,
+            "user": {
+                "id": user["id"],
+                "name": user.get("name", ""),
+                "telegram_username": user.get("telegram_username"),
+            },
+        }
+    return {"status": s or "invalid"}
+
+
+@api_router.get("/auth/me")
+async def auth_me(request: Request):
+    user = await get_current_user_optional(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Non connecté")
+    return {
+        "id": user["id"],
+        "name": user.get("name", ""),
+        "phone": user.get("phone", ""),
+        "telegram_username": user.get("telegram_username"),
+    }
 
 
 # ---------------- Admin: promo codes CRUD ----------------
