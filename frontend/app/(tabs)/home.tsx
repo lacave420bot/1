@@ -12,8 +12,14 @@ import {
   Text,
   View,
 } from "react-native";
+import Animated, {
+  FadeInDown,
+  FadeInRight,
+  FadeIn,
+} from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { AnimatedPressable } from "@/src/components/AnimatedPressable";
 import { api, type Category, type Order, type Product } from "@/src/api";
 import { useCart, formatPrice } from "@/src/store/cart";
 import { useLoyalty } from "@/src/store/loyalty";
@@ -185,65 +191,80 @@ export default function HomeScreen() {
         }
       >
         {/* Hero — Loyalty balance card */}
-        <Pressable
-          onPress={() => router.push("/(tabs)/catalog")}
-          style={styles.hero}
-          testID="home-loyalty-hero"
-        >
-          <LinearGradient
-            colors={gradients.heroBlue}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.heroGrad}
+        <Animated.View entering={FadeInDown.duration(500).delay(50)}>
+          <AnimatedPressable
+            onPress={() => router.push("/(tabs)/catalog")}
+            style={styles.hero}
+            scale={0.97}
+            testID="home-loyalty-hero"
           >
-            <View style={styles.heroTopRow}>
-              <Text style={styles.heroLabel}>Cagnotte fidélité</Text>
-              <Ionicons name="gift" size={20} color="rgba(255,255,255,0.85)" />
-            </View>
-            <Text style={styles.heroAmount} testID="home-points-balance">
-              {formatPrice(points)}
-            </Text>
-            <Text style={styles.heroSub}>
-              {points > 0
-                ? `Utilisable dès votre prochaine commande`
-                : `Gagnez 1 € pour chaque 10 € dépensés`}
-            </Text>
-            <View style={styles.heroFooterRow}>
-              <View style={styles.heroChip}>
-                <Ionicons name="trending-up" size={12} color="#fff" />
-                <Text style={styles.heroChipText}>
-                  {formatPrice(totalEarned)} cumulés
-                </Text>
+            <LinearGradient
+              colors={gradients.heroBlue}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.heroGrad}
+            >
+              <View style={styles.heroTopRow}>
+                <Text style={styles.heroLabel}>Cagnotte fidélité</Text>
+                <Ionicons name="gift" size={20} color="rgba(255,255,255,0.85)" />
               </View>
-              <Ionicons name="arrow-forward" size={18} color="#fff" />
-            </View>
-          </LinearGradient>
-        </Pressable>
+              <Text style={styles.heroAmount} testID="home-points-balance">
+                {formatPrice(points)}
+              </Text>
+              <Text style={styles.heroSub}>
+                {points > 0
+                  ? `Utilisable dès votre prochaine commande`
+                  : `Gagnez 1 € pour chaque 10 € dépensés`}
+              </Text>
+              <View style={styles.heroFooterRow}>
+                <View style={styles.heroChip}>
+                  <Ionicons name="trending-up" size={12} color="#fff" />
+                  <Text style={styles.heroChipText}>
+                    {formatPrice(totalEarned)} cumulés
+                  </Text>
+                </View>
+                <Ionicons name="arrow-forward" size={18} color="#fff" />
+              </View>
+            </LinearGradient>
+          </AnimatedPressable>
+        </Animated.View>
 
         {/* Action grid */}
-        <View style={styles.actionsRow}>
-          {actions.map((a) => (
-            <Pressable
+        <Animated.View
+          entering={FadeInDown.duration(500).delay(150)}
+          style={styles.actionsRow}
+        >
+          {actions.map((a, i) => (
+            <Animated.View
               key={a.id}
-              style={styles.actionTile}
-              onPress={a.onPress}
-              testID={`home-action-${a.id}`}
+              entering={FadeInDown.duration(450).delay(200 + i * 60)}
+              style={{ flex: 1 }}
             >
-              <View style={[styles.actionIconWrap, { backgroundColor: a.bg }]}>
-                <Ionicons name={a.icon} size={22} color={a.fg} />
-                {a.badge && a.badge > 0 ? (
-                  <View style={styles.actionBadge}>
-                    <Text style={styles.actionBadgeText}>{a.badge}</Text>
-                  </View>
-                ) : null}
-              </View>
-              <Text style={styles.actionLabel}>{a.label}</Text>
-            </Pressable>
+              <AnimatedPressable
+                style={styles.actionTile}
+                onPress={a.onPress}
+                testID={`home-action-${a.id}`}
+                scale={0.92}
+              >
+                <View style={[styles.actionIconWrap, { backgroundColor: a.bg }]}>
+                  <Ionicons name={a.icon} size={22} color={a.fg} />
+                  {a.badge && a.badge > 0 ? (
+                    <View style={styles.actionBadge}>
+                      <Text style={styles.actionBadgeText}>{a.badge}</Text>
+                    </View>
+                  ) : null}
+                </View>
+                <Text style={styles.actionLabel}>{a.label}</Text>
+              </AnimatedPressable>
+            </Animated.View>
           ))}
-        </View>
+        </Animated.View>
 
         {/* Compliance card */}
-        <View style={styles.complianceCard}>
+        <Animated.View
+          entering={FadeIn.duration(500).delay(450)}
+          style={styles.complianceCard}
+        >
           <View style={styles.complianceIcon}>
             <Ionicons name="shield-checkmark" size={18} color="#4ADE80" />
           </View>
@@ -253,7 +274,7 @@ export default function HomeScreen() {
               THC &lt; 0,3 % · Réservé aux 18 ans et +
             </Text>
           </View>
-        </View>
+        </Animated.View>
 
         {/* Categories */}
         <View style={styles.sectionHeader}>
@@ -267,25 +288,30 @@ export default function HomeScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.catRow}
         >
-          {categories.map((c) => (
-            <Pressable
+          {categories.map((c, i) => (
+            <Animated.View
               key={c.id}
-              style={styles.catCard}
-              onPress={() =>
-                router.push({
-                  pathname: "/(tabs)/catalog",
-                  params: { category_id: c.id },
-                })
-              }
-              testID={`home-category-${c.id}`}
+              entering={FadeInRight.duration(400).delay(500 + i * 50)}
             >
-              <View style={styles.catIconWrap}>
-                <Ionicons name={c.icon as any} size={24} color={colors.onSurface} />
-              </View>
-              <Text style={styles.catName} numberOfLines={1}>
-                {c.name}
-              </Text>
-            </Pressable>
+              <AnimatedPressable
+                style={styles.catCard}
+                onPress={() =>
+                  router.push({
+                    pathname: "/(tabs)/catalog",
+                    params: { category_id: c.id },
+                  })
+                }
+                testID={`home-category-${c.id}`}
+                scale={0.92}
+              >
+                <View style={styles.catIconWrap}>
+                  <Ionicons name={c.icon as any} size={24} color={colors.onSurface} />
+                </View>
+                <Text style={styles.catName} numberOfLines={1}>
+                  {c.name}
+                </Text>
+              </AnimatedPressable>
+            </Animated.View>
           ))}
         </ScrollView>
 
@@ -298,34 +324,41 @@ export default function HomeScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.md }}
         >
-          {popular.map((item) => (
-            <Pressable
+          {popular.map((item, i) => (
+            <Animated.View
               key={item.id}
-              style={styles.popularCard}
-              onPress={() => router.push(`/product/${item.id}`)}
-              testID={`home-popular-${item.id}`}
+              entering={FadeInRight.duration(450).delay(700 + i * 60)}
             >
-              <Image source={{ uri: item.image }} style={styles.popularImage} contentFit="cover" />
-              <View style={styles.popularBody}>
-                <Text style={styles.productTitle} numberOfLines={1}>
-                  {item.name}
-                </Text>
-                <Text style={styles.productDesc} numberOfLines={1}>
-                  {item.unit || item.description}
-                </Text>
-                <View style={styles.popularFooter}>
-                  <Text style={styles.productPrice}>{formatPrice(item.price)}</Text>
-                  <Pressable
-                    style={styles.addBtn}
-                    onPress={() => addItem(item)}
-                    hitSlop={8}
-                    testID={`home-add-${item.id}`}
-                  >
-                    <Ionicons name="add" size={18} color="#fff" />
-                  </Pressable>
+              <AnimatedPressable
+                style={styles.popularCard}
+                onPress={() => router.push(`/product/${item.id}`)}
+                testID={`home-popular-${item.id}`}
+                scale={0.96}
+              >
+                <Image source={{ uri: item.image }} style={styles.popularImage} contentFit="cover" />
+                <View style={styles.popularBody}>
+                  <Text style={styles.productTitle} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                  <Text style={styles.productDesc} numberOfLines={1}>
+                    {item.unit || item.description}
+                  </Text>
+                  <View style={styles.popularFooter}>
+                    <Text style={styles.productPrice}>{formatPrice(item.price)}</Text>
+                    <AnimatedPressable
+                      style={styles.addBtn}
+                      onPress={() => addItem(item)}
+                      hitSlop={8}
+                      testID={`home-add-${item.id}`}
+                      scale={0.85}
+                      haptic="medium"
+                    >
+                      <Ionicons name="add" size={18} color="#fff" />
+                    </AnimatedPressable>
+                  </View>
                 </View>
-              </View>
-            </Pressable>
+              </AnimatedPressable>
+            </Animated.View>
           ))}
         </ScrollView>
 
@@ -338,13 +371,17 @@ export default function HomeScreen() {
                 <Text style={styles.linkText}>Tout voir</Text>
               </Pressable>
             </View>
-            <View style={styles.activityList}>
+            <Animated.View
+              entering={FadeInDown.duration(500).delay(900)}
+              style={styles.activityList}
+            >
               {recentOrders.map((o) => (
-                <Pressable
+                <AnimatedPressable
                   key={o.id}
                   style={styles.activityRow}
                   onPress={() => router.push(`/order/${o.id}`)}
                   testID={`home-activity-${o.id}`}
+                  scale={0.98}
                 >
                   <View
                     style={[
@@ -376,9 +413,9 @@ export default function HomeScreen() {
                     </Text>
                   </View>
                   <Text style={styles.activityAmount}>−{formatPrice(o.total)}</Text>
-                </Pressable>
+                </AnimatedPressable>
               ))}
-            </View>
+            </Animated.View>
           </>
         )}
 
