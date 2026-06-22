@@ -17,8 +17,9 @@ from datetime import datetime, timezone, timedelta
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-ORDER_STATUSES = ["En préparation", "En livraison", "Livré"]
-ADMIN_STATUS_CHOICES = ["En préparation", "En livraison", "Livré", "Annulée"]
+ORDER_STATUSES = ["En préparation", "Prête"]
+ADMIN_STATUS_CHOICES = ["En préparation", "Prête", "Récupérée", "Annulée"]
+
 
 def compute_status(created_at_iso: str) -> str:
     try:
@@ -28,15 +29,12 @@ def compute_status(created_at_iso: str) -> str:
         elapsed_sec = (datetime.now(timezone.utc) - dt).total_seconds()
     except Exception:
         return ORDER_STATUSES[0]
-    if elapsed_sec < 180:  # < 3 min
+    if elapsed_sec < 300:  # < 5 min
         return ORDER_STATUSES[0]
-    if elapsed_sec < 600:  # < 10 min
-        return ORDER_STATUSES[1]
-    return ORDER_STATUSES[2]
+    return ORDER_STATUSES[1]
 
 
 def with_status(order_doc: dict) -> dict:
-    # If admin manually set a status, use it; otherwise compute from created_at
     manual = order_doc.get("manual_status")
     if manual:
         order_doc["status"] = manual
@@ -62,22 +60,43 @@ class Category(BaseModel):
     kind: str  # "restaurant" | "grocery"
 
 
+class WeightVariant(BaseModel):
+    label: str  # "1 g", "5 g", "10 g"…
+    price: float
+
+
 class Product(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     description: str
-    price: float
+    price: float  # base price (kept for legacy; falls back to lowest variant)
     image: str
     category_id: str
-    category_kind: str  # "restaurant" | "grocery"
-    unit: Optional[str] = None  # e.g., "kg", "pièce"
+    category_kind: str
+    unit: Optional[str] = None
     popular: bool = False
     promo: bool = False
+    variants: List[WeightVariant] = []
+
+
+def min_variant_price(product: dict) -> float:
+    variants = product.get("variants") or []
+    if not variants:
+        return float(product.get("price", 0))
+    return min(float(v["price"]) for v in variants)
+
+
+def find_variant(product: dict, label: str) -> Optional[dict]:
+    for v in product.get("variants") or []:
+        if v.get("label") == label:
+            return v
+    return None
 
 
 class CartItemIn(BaseModel):
     product_id: str
     quantity: int
+    variant_label: Optional[str] = None
 
 
 class OrderIn(BaseModel):
@@ -96,6 +115,7 @@ class OrderItem(BaseModel):
     price: float
     image: str
     quantity: int
+    variant_label: Optional[str] = None
 
 
 class Order(BaseModel):
@@ -107,7 +127,7 @@ class Order(BaseModel):
     notes: str = ""
     items: List[OrderItem]
     subtotal: float
-    delivery_fee: float
+    delivery_fee: float = 0.0
     points_used: float = 0.0
     points_earned: float = 0.0
     total: float
@@ -326,24 +346,35 @@ async def create_order(payload: OrderIn):
         p = product_map.get(it.product_id)
         if not p:
             raise HTTPException(status_code=400, detail=f"Produit {it.product_id} introuvable")
-        line_total = p["price"] * it.quantity
+        # Resolve variant price
+        unit_price = float(p.get("price", 0))
+        variant_label = it.variant_label
+        if variant_label:
+            v = find_variant(p, variant_label)
+            if not v:
+                raise HTTPException(status_code=400, detail=f"Variante '{variant_label}' introuvable pour {p['name']}")
+            unit_price = float(v["price"])
+        elif p.get("variants"):
+            # No variant specified — fall back to cheapest variant
+            v = min(p["variants"], key=lambda x: float(x["price"]))
+            unit_price = float(v["price"])
+            variant_label = v["label"]
+
+        line_total = unit_price * it.quantity
         subtotal += line_total
         order_items.append(OrderItem(
-            product_id=p["id"], name=p["name"], price=p["price"],
+            product_id=p["id"], name=p["name"], price=unit_price,
             image=p["image"], quantity=it.quantity,
+            variant_label=variant_label,
         ))
 
-    # Loyalty: validate use_points against current balance
     loyalty_doc = await db.loyalty.find_one({"guest_id": payload.guest_id}, {"_id": 0})
     current_balance = float(loyalty_doc["points_balance"]) if loyalty_doc else 0.0
     use_points = max(0.0, min(float(payload.use_points or 0.0), current_balance, subtotal))
     use_points = round(use_points, 2)
 
     discounted_subtotal = max(0.0, subtotal - use_points)
-    delivery_fee = 0.0 if discounted_subtotal >= 30 else 2.99
-    total = round(discounted_subtotal + delivery_fee, 2)
-
-    # Earn 1€ for every 10€ spent (on discounted subtotal, items only)
+    total = round(discounted_subtotal, 2)
     points_earned = round(int(discounted_subtotal // 10) * 1.0, 2)
 
     order = Order(
@@ -354,14 +385,13 @@ async def create_order(payload: OrderIn):
         notes=payload.notes or "",
         items=order_items,
         subtotal=round(subtotal, 2),
-        delivery_fee=delivery_fee,
+        delivery_fee=0.0,
         points_used=use_points,
         points_earned=points_earned,
         total=total,
     )
     await db.orders.insert_one(order.dict())
 
-    # Update loyalty balance
     new_balance = round(current_balance - use_points + points_earned, 2)
     await db.loyalty.update_one(
         {"guest_id": payload.guest_id},
@@ -459,7 +489,34 @@ class TokenOut(BaseModel):
 
 
 @app.on_event("startup")
-async def seed_admin():
+async def migrate_variants():
+    """One-shot migration: ensure each product has weight variants.
+    Defaults depend on the product category."""
+    DEFAULT_VARIANTS = {
+        "fleurs": [
+            {"label": "1 g", "price": 9.0},
+            {"label": "5 g", "price": 40.0},
+            {"label": "10 g", "price": 75.0},
+            {"label": "25 g", "price": 175.0},
+            {"label": "50 g", "price": 320.0},
+        ],
+        "resines": [
+            {"label": "1 g", "price": 10.0},
+            {"label": "5 g", "price": 45.0},
+            {"label": "10 g", "price": 85.0},
+            {"label": "25 g", "price": 200.0},
+        ],
+    }
+    GENERIC = [{"label": "1 pièce", "price": 0.0}]
+    cursor = db.products.find({"$or": [{"variants": {"$exists": False}}, {"variants": {"$size": 0}}]}, {"_id": 0})
+    async for prod in cursor:
+        base_price = float(prod.get("price", 0))
+        defaults = DEFAULT_VARIANTS.get(prod.get("category_id"))
+        if defaults:
+            variants = [dict(v) for v in defaults]
+        else:
+            variants = [{"label": prod.get("unit") or "1 pièce", "price": base_price or 9.9}]
+        await db.products.update_one({"id": prod["id"]}, {"$set": {"variants": variants}})
     existing = await db.admin_config.find_one({"_id": "admin"})
     if existing is None:
         initial = os.environ.get("ADMIN_INITIAL_PIN")
@@ -537,13 +594,14 @@ async def admin_change_pin(body: AdminChangePinIn, _admin: dict = Depends(requir
 class ProductIn(BaseModel):
     name: str
     description: str
-    price: float
+    price: float = 0
     image: str
     category_id: str
     category_kind: str = "cbd"
     unit: Optional[str] = None
     popular: bool = False
     promo: bool = False
+    variants: List[WeightVariant] = []
 
 
 class ProductPatch(BaseModel):
@@ -556,6 +614,7 @@ class ProductPatch(BaseModel):
     unit: Optional[str] = None
     popular: Optional[bool] = None
     promo: Optional[bool] = None
+    variants: Optional[List[WeightVariant]] = None
 
 
 @api_router.post("/admin/products", response_model=Product)

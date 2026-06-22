@@ -220,7 +220,7 @@ export default function OrderDetailScreen() {
               <Image source={{ uri: it.image }} style={styles.itemImg} contentFit="cover" />
               <View style={{ flex: 1 }}>
                 <Text style={styles.itemName} numberOfLines={1}>
-                  {it.name}
+                  {it.name}{it.variant_label ? ` · ${it.variant_label}` : ""}
                 </Text>
                 <Text style={styles.itemQty}>
                   {it.quantity} × {formatPrice(it.price)}
@@ -245,12 +245,6 @@ export default function OrderDetailScreen() {
               </Text>
             </View>
           )}
-          <View style={styles.sumRow}>
-            <Text style={styles.sumLabel}>Livraison</Text>
-            <Text style={styles.sumValue}>
-              {order.delivery_fee === 0 ? "Offerte" : formatPrice(order.delivery_fee)}
-            </Text>
-          </View>
           <View style={styles.divider} />
           <View style={styles.sumRow}>
             <Text style={styles.totalLabel}>Total payé</Text>

@@ -10,12 +10,12 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { useCart, formatPrice } from "@/src/store/cart";
+import { useCart, formatPrice, lineKey } from "@/src/store/cart";
 import { colors, font, radius, shadows, spacing } from "@/src/theme";
 
 export default function CartScreen() {
   const router = useRouter();
-  const { items, setQuantity, removeItem, subtotal, deliveryFee, total } = useCart();
+  const { items, setQuantity, removeItem, subtotal, total } = useCart();
 
   if (items.length === 0) {
     return (
@@ -55,54 +55,19 @@ export default function CartScreen() {
         contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: 220 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Free-delivery progress banner */}
-        {(() => {
-          const target = 30;
-          const remaining = Math.max(0, target - subtotal);
-          const pct = Math.min(1, subtotal / target);
-          const reached = remaining === 0;
-          return (
-            <View
-              style={[styles.progressBanner, reached && styles.progressBannerDone]}
-              testID="cart-free-delivery-banner"
-            >
-              <View style={styles.progressHeader}>
-                <Ionicons
-                  name={reached ? "checkmark-circle" : "bicycle"}
-                  size={20}
-                  color={reached ? colors.success : colors.brand}
-                />
-                <Text style={styles.progressText}>
-                  {reached
-                    ? "Bravo ! Livraison gratuite débloquée"
-                    : `Plus que ${formatPrice(remaining)} pour la livraison gratuite`}
-                </Text>
-              </View>
-              <View style={styles.progressTrack}>
-                <View
-                  style={[
-                    styles.progressFill,
-                    { width: `${pct * 100}%`, backgroundColor: reached ? colors.success : colors.brand },
-                  ]}
-                />
-              </View>
-            </View>
-          );
-        })()}
-
-        {items.map(({ product, quantity }) => (
-          <View key={product.id} style={styles.row} testID={`cart-item-${product.id}`}>
+        {items.map((line) => { const { product, variantLabel, unitPrice, quantity } = line; const lk = lineKey(product.id, variantLabel); return (
+          <View key={lk} style={styles.row} testID={`cart-item-${lk}`}>
             <Image source={{ uri: product.image }} style={styles.rowImg} contentFit="cover" />
             <View style={{ flex: 1, gap: 4 }}>
               <Text style={styles.rowTitle} numberOfLines={1}>
                 {product.name}
               </Text>
-              {product.unit && <Text style={styles.rowUnit}>{product.unit}</Text>}
-              <Text style={styles.rowPrice}>{formatPrice(product.price)}</Text>
+              <Text style={styles.rowUnit}>{variantLabel}</Text>
+              <Text style={styles.rowPrice}>{formatPrice(unitPrice)}</Text>
             </View>
             <View style={styles.stepperCol}>
               <Pressable
-                onPress={() => removeItem(product.id)}
+                onPress={() => removeItem(lk)}
                 hitSlop={8}
                 testID={`cart-remove-${product.id}`}
               >
@@ -111,7 +76,7 @@ export default function CartScreen() {
               <View style={styles.stepper}>
                 <Pressable
                   style={styles.stepperBtn}
-                  onPress={() => setQuantity(product.id, quantity - 1)}
+                  onPress={() => setQuantity(lk, quantity - 1)}
                   hitSlop={6}
                   testID={`cart-dec-${product.id}`}
                 >
@@ -122,7 +87,7 @@ export default function CartScreen() {
                 </Text>
                 <Pressable
                   style={styles.stepperBtn}
-                  onPress={() => setQuantity(product.id, quantity + 1)}
+                  onPress={() => setQuantity(lk, quantity + 1)}
                   hitSlop={6}
                   testID={`cart-inc-${product.id}`}
                 >
@@ -131,7 +96,7 @@ export default function CartScreen() {
               </View>
             </View>
           </View>
-        ))}
+        ); })}
 
         <View style={styles.summary}>
           <View style={styles.summaryRow}>
@@ -140,13 +105,7 @@ export default function CartScreen() {
               {formatPrice(subtotal)}
             </Text>
           </View>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Livraison</Text>
-            <Text style={styles.summaryValue} testID="cart-delivery">
-              {deliveryFee === 0 ? "Offerte" : formatPrice(deliveryFee)}
-            </Text>
-          </View>
-          <View style={styles.divider} />
+
           <View style={styles.summaryRow}>
             <Text style={styles.totalLabel}>Total</Text>
             <Text style={styles.totalValue} testID="cart-total">

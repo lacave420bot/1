@@ -8,6 +8,8 @@ export type Category = {
   kind: "restaurant" | "grocery";
 };
 
+export type WeightVariant = { label: string; price: number };
+
 export type Product = {
   id: string;
   name: string;
@@ -15,11 +17,19 @@ export type Product = {
   price: number;
   image: string;
   category_id: string;
-  category_kind: "restaurant" | "grocery";
+  category_kind: "restaurant" | "grocery" | "cbd";
   unit?: string | null;
   popular?: boolean;
   promo?: boolean;
+  variants?: WeightVariant[];
 };
+
+export function minVariantPrice(p: Product): number {
+  if (p.variants && p.variants.length > 0) {
+    return Math.min(...p.variants.map((v) => v.price));
+  }
+  return p.price;
+}
 
 export type OrderItem = {
   product_id: string;
@@ -27,6 +37,7 @@ export type OrderItem = {
   price: number;
   image: string;
   quantity: number;
+  variant_label?: string | null;
 };
 
 export type Order = {

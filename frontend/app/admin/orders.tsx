@@ -249,7 +249,7 @@ export default function AdminOrdersScreen() {
                     <View key={it.product_id} style={styles.itemRow}>
                       <Image source={{ uri: it.image }} style={styles.itemImg} contentFit="cover" />
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.itemName} numberOfLines={1}>{it.name}</Text>
+                        <Text style={styles.itemName} numberOfLines={1}>{it.name}{it.variant_label ? ` · ${it.variant_label}` : ""}</Text>
                         <Text style={styles.itemQty}>{it.quantity} × {formatPrice(it.price)}</Text>
                       </View>
                       <Text style={styles.itemTotal}>{formatPrice(it.price * it.quantity)}</Text>
@@ -260,7 +260,6 @@ export default function AdminOrdersScreen() {
                   {selected.points_used > 0 && (
                     <Row label="Fidélité utilisée" value={`− ${formatPrice(selected.points_used)}`} valueColor={colors.brand} />
                   )}
-                  <Row label="Livraison" value={selected.delivery_fee === 0 ? "Offerte" : formatPrice(selected.delivery_fee)} />
                   <Row label="Total payé" value={formatPrice(selected.total)} bold />
                 </View>
 

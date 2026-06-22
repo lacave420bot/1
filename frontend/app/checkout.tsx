@@ -38,12 +38,9 @@ export default function CheckoutScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const availablePoints = loyalty?.points_balance ?? 0;
-  const pointsApplied = usePoints
-    ? Math.min(availablePoints, subtotal)
-    : 0;
+  const pointsApplied = usePoints ? Math.min(availablePoints, subtotal) : 0;
   const discountedSubtotal = Math.max(0, subtotal - pointsApplied);
-  const deliveryFee = discountedSubtotal === 0 ? 0 : discountedSubtotal >= 30 ? 0 : 2.99;
-  const total = Math.round((discountedSubtotal + deliveryFee) * 100) / 100;
+  const total = Math.round(discountedSubtotal * 100) / 100;
   const pointsToEarn = Math.floor(discountedSubtotal / 10);
 
   const canSubmit = name.trim() && phone.trim() && address.trim() && items.length > 0;
@@ -63,7 +60,7 @@ export default function CheckoutScreen() {
         phone: phone.trim(),
         notes: notes.trim(),
         use_points: pointsApplied,
-        items: items.map((l) => ({ product_id: l.product.id, quantity: l.quantity })),
+        items: items.map((l) => ({ product_id: l.product.id, quantity: l.quantity, variant_label: l.variantLabel })),
       });
       setSuccess({
         id: order.id,
@@ -194,10 +191,10 @@ export default function CheckoutScreen() {
             {items.map((l) => (
               <View key={l.product.id} style={styles.itemRow}>
                 <Text style={styles.itemName} numberOfLines={1}>
-                  {l.quantity}× {l.product.name}
+                  {l.quantity}× {l.product.name} ({l.variantLabel})
                 </Text>
                 <Text style={styles.itemPrice}>
-                  {formatPrice(l.product.price * l.quantity)}
+                  {formatPrice(l.unitPrice * l.quantity)}
                 </Text>
               </View>
             ))}
@@ -228,12 +225,6 @@ export default function CheckoutScreen() {
                 )}
               </Pressable>
             )}
-            <View style={styles.itemRow}>
-              <Text style={styles.itemLabel}>Livraison</Text>
-              <Text style={styles.itemPrice}>
-                {deliveryFee === 0 ? "Offerte" : formatPrice(deliveryFee)}
-              </Text>
-            </View>
             <View style={styles.divider} />
             <View style={styles.itemRow}>
               <Text style={styles.totalLabel}>Total</Text>

@@ -32,6 +32,7 @@ type Draft = {
   unit: string;
   popular: boolean;
   promo: boolean;
+  variants: { label: string; price: string }[];
 };
 
 const EMPTY: Draft = {
@@ -43,7 +44,16 @@ const EMPTY: Draft = {
   unit: "",
   popular: false,
   promo: false,
+  variants: [],
 };
+
+const DEFAULT_VARIANTS_PRESET = [
+  { label: "1 g", price: "9" },
+  { label: "5 g", price: "40" },
+  { label: "10 g", price: "75" },
+  { label: "25 g", price: "175" },
+  { label: "50 g", price: "320" },
+];
 
 export default function AdminProductsScreen() {
   const router = useRouter();
@@ -77,7 +87,7 @@ export default function AdminProductsScreen() {
   }
 
   const openCreate = () => {
-    setDraft({ ...EMPTY, category_id: categories[0]?.id || "" });
+    setDraft({ ...EMPTY, category_id: categories[0]?.id || "", variants: [...DEFAULT_VARIANTS_PRESET] });
     setErr(null);
     setModalOpen(true);
   };
@@ -93,6 +103,7 @@ export default function AdminProductsScreen() {
       unit: p.unit || "",
       popular: !!p.popular,
       promo: !!p.promo,
+      variants: (p.variants || []).map((v) => ({ label: v.label, price: String(v.price) })),
     });
     setErr(null);
     setModalOpen(true);
@@ -111,6 +122,9 @@ export default function AdminProductsScreen() {
     try {
       setSaving(true);
       setErr(null);
+      const variants = draft.variants
+        .filter((v) => v.label.trim() && v.price.trim())
+        .map((v) => ({ label: v.label.trim(), price: parseFloat(v.price.replace(",", ".")) || 0 }));
       const body = {
         name: draft.name.trim(),
         description: draft.description.trim(),
@@ -120,6 +134,7 @@ export default function AdminProductsScreen() {
         unit: draft.unit.trim() || undefined,
         popular: draft.popular,
         promo: draft.promo,
+        variants,
       };
       if (draft.id) {
         await api.adminUpdateProduct(draft.id, body);
@@ -251,6 +266,63 @@ export default function AdminProductsScreen() {
               <Field label="URL Image">
                 <TextInput value={draft.image} onChangeText={(t) => setDraft({ ...draft, image: t })} style={styles.input} placeholder="https://..." placeholderTextColor={colors.muted} testID="draft-image" autoCapitalize="none" />
               </Field>
+
+              <View style={{ gap: spacing.sm }}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <Text style={[styles.label, { fontSize: font.base, fontWeight: "800", color: colors.onSurface }]}>
+                    Tarifs par poids
+                  </Text>
+                  <Pressable onPress={() => setDraft({ ...draft, variants: [...DEFAULT_VARIANTS_PRESET] })} testID="draft-variants-preset">
+                    <Text style={{ color: colors.brand, fontWeight: "700", fontSize: font.sm }}>Préréglage CBD</Text>
+                  </Pressable>
+                </View>
+                {draft.variants.map((v, i) => (
+                  <View key={i} style={{ flexDirection: "row", gap: spacing.sm, alignItems: "center" }}>
+                    <TextInput
+                      value={v.label}
+                      onChangeText={(t) => {
+                        const next = [...draft.variants];
+                        next[i] = { ...next[i], label: t };
+                        setDraft({ ...draft, variants: next });
+                      }}
+                      placeholder="1 g"
+                      placeholderTextColor={colors.muted}
+                      style={[styles.input, { flex: 1 }]}
+                      testID={`draft-variant-label-${i}`}
+                    />
+                    <TextInput
+                      value={v.price}
+                      onChangeText={(t) => {
+                        const next = [...draft.variants];
+                        next[i] = { ...next[i], price: t };
+                        setDraft({ ...draft, variants: next });
+                      }}
+                      placeholder="9.00"
+                      placeholderTextColor={colors.muted}
+                      keyboardType="decimal-pad"
+                      style={[styles.input, { width: 90 }]}
+                      testID={`draft-variant-price-${i}`}
+                    />
+                    <Pressable
+                      onPress={() => setDraft({ ...draft, variants: draft.variants.filter((_, idx) => idx !== i) })}
+                      style={styles.iconBtn}
+                      testID={`draft-variant-del-${i}`}
+                      hitSlop={6}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={colors.error} />
+                    </Pressable>
+                  </View>
+                ))}
+                <Pressable
+                  onPress={() => setDraft({ ...draft, variants: [...draft.variants, { label: "", price: "" }] })}
+                  style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: spacing.sm }}
+                  testID="draft-variant-add"
+                >
+                  <Ionicons name="add-circle-outline" size={20} color={colors.brand} />
+                  <Text style={{ color: colors.brand, fontWeight: "700" }}>Ajouter un poids</Text>
+                </Pressable>
+              </View>
+
               <View style={styles.switchRow}>
                 <Text style={styles.switchLabel}>Populaire</Text>
                 <Switch value={draft.popular} onValueChange={(v) => setDraft({ ...draft, popular: v })} testID="draft-popular" />

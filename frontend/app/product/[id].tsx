@@ -25,6 +25,7 @@ export default function ProductDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [qty, setQty] = useState(1);
+  const [variantIdx, setVariantIdx] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -62,9 +63,13 @@ export default function ProductDetailScreen() {
   }
 
   const handleAdd = () => {
-    addItem(product, qty);
+    const v = product.variants && product.variants.length > 0 ? product.variants[variantIdx] : null;
+    if (!v) return;
+    addItem(product, v.label, v.price, qty);
     router.back();
   };
+  const currentVariant = product?.variants && product.variants.length > 0 ? product.variants[variantIdx] : null;
+  const displayPrice = currentVariant ? currentVariant.price : product?.price ?? 0;
 
   return (
     <View style={styles.root} testID="product-screen">
@@ -92,11 +97,27 @@ export default function ProductDetailScreen() {
               <Text style={styles.title}>{product.name}</Text>
               {product.unit && <Text style={styles.unit}>{product.unit}</Text>}
             </View>
-            <Text style={styles.price}>{formatPrice(product.price)}</Text>
+            <Text style={styles.price}>{formatPrice(displayPrice)}</Text>
           </View>
           {product.promo && (
             <View style={styles.promoBadge}>
               <Text style={styles.promoBadgeText}>Offre spéciale</Text>
+            </View>
+          )}
+          {product.variants && product.variants.length > 0 && (
+            <View style={{ gap: 8 }}>
+              <Text style={styles.sectionLabel}>Choisir le poids</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+                {product.variants.map((v, i) => {
+                  const active = i === variantIdx;
+                  return (
+                    <Pressable key={v.label} onPress={() => setVariantIdx(i)} testID={`product-variant-${v.label}`} style={{ borderWidth: 1.5, borderColor: active ? colors.brand : colors.border, backgroundColor: active ? colors.brandSecondary : colors.surfaceSecondary, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 10, alignItems: "center" }}>
+                      <Text style={{ color: active ? colors.brand : colors.onSurface, fontWeight: "800", fontSize: 14 }}>{v.label}</Text>
+                      <Text style={{ color: active ? colors.brand : colors.muted, fontSize: 12, fontWeight: "600", marginTop: 2 }}>{formatPrice(v.price)}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
             </View>
           )}
           <Text style={styles.sectionLabel}>Description</Text>
@@ -127,7 +148,7 @@ export default function ProductDetailScreen() {
         <Pressable style={styles.addBtn} onPress={handleAdd} testID="product-add-btn">
           <Ionicons name="bag-add" size={18} color="#fff" />
           <Text style={styles.addBtnText}>
-            Ajouter · {formatPrice(product.price * qty)}
+            Ajouter · {formatPrice(displayPrice * qty)}
           </Text>
         </Pressable>
       </View>

@@ -14,14 +14,14 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { api, type Category, type Product } from "@/src/api";
+import { api, type Category, type Product, minVariantPrice } from "@/src/api";
 import { useCart, formatPrice } from "@/src/store/cart";
 import { colors, font, radius, shadows, spacing } from "@/src/theme";
 
 export default function CatalogScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ category_id?: string }>();
-  const { addItem, count, total } = useCart();
+  const { count, total } = useCart();
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -170,15 +170,8 @@ export default function CatalogScreen() {
                   </Text>
                 )}
                 <View style={styles.cardFooter}>
-                  <Text style={styles.cardPrice}>{formatPrice(item.price)}</Text>
-                  <Pressable
-                    style={styles.addBtn}
-                    onPress={() => addItem(item)}
-                    hitSlop={6}
-                    testID={`catalog-add-${item.id}`}
-                  >
-                    <Ionicons name="add" size={18} color={colors.onBrandPrimary} />
-                  </Pressable>
+                  <Text style={styles.cardPriceFrom}>dès {formatPrice(minVariantPrice(item))}</Text>
+                  <Ionicons name="chevron-forward" size={18} color={colors.muted} />
                 </View>
               </View>
             </Pressable>
@@ -282,6 +275,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   cardPrice: { fontSize: font.lg, fontWeight: "700", color: colors.brand },
+  cardPriceFrom: { fontSize: font.base, fontWeight: "700", color: colors.brand },
   addBtn: {
     width: 32,
     height: 32,

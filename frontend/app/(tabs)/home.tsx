@@ -20,7 +20,7 @@ import Animated, {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@/src/components/AnimatedPressable";
-import { api, type Category, type Order, type Product } from "@/src/api";
+import { api, type Category, type Order, type Product, minVariantPrice } from "@/src/api";
 import { useCart, formatPrice } from "@/src/store/cart";
 import { useLoyalty } from "@/src/store/loyalty";
 import { colors, font, gradients, radius, shadows, spacing } from "@/src/theme";
@@ -51,7 +51,7 @@ function formatRelativeDate(iso: string): string {
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { addItem, count, guestId, ready } = useCart();
+  const { count, guestId, ready } = useCart();
   const { loyalty, refresh: refreshLoyalty } = useLoyalty(guestId);
 
   const [categories, setCategories] = useState<Category[]>([]);
@@ -352,17 +352,8 @@ export default function HomeScreen() {
                     {item.unit || item.description}
                   </Text>
                   <View style={styles.popularFooter}>
-                    <Text style={styles.productPrice}>{formatPrice(item.price)}</Text>
-                    <AnimatedPressable
-                      style={styles.addBtn}
-                      onPress={() => addItem(item)}
-                      hitSlop={8}
-                      testID={`home-add-${item.id}`}
-                      scale={0.85}
-                      haptic="medium"
-                    >
-                      <Ionicons name="add" size={18} color="#fff" />
-                    </AnimatedPressable>
+                    <Text style={styles.productPrice}>dès {formatPrice(minVariantPrice(item))}</Text>
+                    <Ionicons name="chevron-forward" size={18} color={colors.muted} />
                   </View>
                 </View>
               </AnimatedPressable>
