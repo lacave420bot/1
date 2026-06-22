@@ -232,17 +232,24 @@ export default function AdminPromoCodesScreen() {
       ) : (
         <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl }}>
           {sorted.map((p) => (
-            <Pressable
+            <View
               key={p.id}
               style={[styles.card, !p.enabled && { opacity: 0.55 }]}
-              onPress={() => openEdit(p)}
               testID={`promo-card-${p.code}`}
             >
               <View style={styles.cardRow}>
-                <View style={styles.valuePill}>
+                <Pressable
+                  style={styles.valuePill}
+                  onPress={() => openEdit(p)}
+                  testID={`promo-pill-${p.code}`}
+                >
                   <Text style={styles.valuePillText}>{renderValue(p)}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
+                </Pressable>
+                <Pressable
+                  style={{ flex: 1 }}
+                  onPress={() => openEdit(p)}
+                  testID={`promo-body-${p.code}`}
+                >
                   <Text style={styles.cardCode}>{p.code}</Text>
                   <Text style={styles.cardSub}>
                     {p.min_subtotal > 0 ? `Min. ${p.min_subtotal.toFixed(2).replace(".", ",")} €` : "Sans minimum"}
@@ -250,14 +257,20 @@ export default function AdminPromoCodesScreen() {
                     {p.max_uses ? `${p.times_used}/${p.max_uses} utilisations` : `${p.times_used} utilisations`}
                   </Text>
                   <Text style={styles.cardMeta}>{formatExpiry(p.expires_at)}</Text>
+                </Pressable>
+                <View
+                  /* Stop the touch from bubbling to a parent pressable */
+                  onStartShouldSetResponder={() => true}
+                  style={styles.switchWrap}
+                >
+                  <Switch
+                    value={p.enabled}
+                    onValueChange={() => toggleEnabled(p)}
+                    trackColor={{ true: colors.brand, false: colors.surfaceTertiary }}
+                    thumbColor="#fff"
+                    testID={`promo-toggle-${p.code}`}
+                  />
                 </View>
-                <Switch
-                  value={p.enabled}
-                  onValueChange={() => toggleEnabled(p)}
-                  trackColor={{ true: colors.brand, false: colors.surfaceTertiary }}
-                  thumbColor="#fff"
-                  testID={`promo-toggle-${p.code}`}
-                />
               </View>
               <View style={styles.cardActions}>
                 <Pressable
@@ -279,7 +292,7 @@ export default function AdminPromoCodesScreen() {
                   <Text style={[styles.smallBtnText, { color: "#FCA5A5" }]}>Supprimer</Text>
                 </Pressable>
               </View>
-            </Pressable>
+            </View>
           ))}
         </ScrollView>
       )}
@@ -489,6 +502,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   valuePillText: { color: "#FBBF24", fontWeight: "800", fontSize: font.base },
+  switchWrap: { paddingHorizontal: spacing.xs },
   cardCode: { color: colors.onSurface, fontSize: font.lg, fontWeight: "800", letterSpacing: 0.5 },
   cardSub: { color: colors.muted, fontSize: font.sm, marginTop: 2 },
   cardMeta: { color: colors.muted, fontSize: font.sm, marginTop: 2, fontStyle: "italic" },
