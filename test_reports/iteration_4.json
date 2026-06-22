@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 4 — admin orders new features tested end-to-end on public Expo web preview (390x844) and via direct backend API. Backend: 8/8 pytest cases pass in /app/backend/tests/test_admin_orders_v4.py — DELETE /api/admin/orders/{id} returns 200 + {status:'ok', deleted:1} on hit and 404 on miss, requires auth (401 without token); POST /api/admin/orders/bulk-delete returns 200 + {status:'ok', deleted:N} with N matching the count of existing ids in the list, returns deleted:0 on empty array, requires auth (401); evaluate_promo now accepts kind='fixed' as alias for 'amount' (verified by injecting a kind='fixed' promo directly into MongoDB and calling /api/promo/validate — returns valid:true, discount=value, capped at subtotal). Frontend admin/orders.tsx: PIN 2937 login works first try; the 4 colored stat boxes are present with correct testIDs (admin-orders-filter-all/En cours/Terminée/Annulée), are clickable, and switch the visible list (verified by toggling between 'all' and 'En cours'); old FILTRES chip row is gone; every card footer shows a delivery/pickup mini-badge ('Sur place' for pickup, 'Livraison' for delivery — 7 + 28 visible on test dataset of 35 orders); enter-select button (admin-orders-enter-select) opens select mode, header switches to '{n} sélectionnée(s)' with select-all (admin-orders-select-all) and cancel-select (admin-orders-cancel-select) buttons, red 'Supprimer (n)' bar (admin-orders-bulk-delete inside admin-orders-bulk-bar) appears at the bottom, tap-select-all selects all 35 cards (header reads '35 sélectionnées'), cancel-select exits clean; long-press on a card enters select mode with that card pre-selected; opening detail modal exposes admin-order-status-{En cours,Terminée,Annulée}, admin-order-cancel-btn, admin-order-delete-btn — tapping 'En cours' KEEPS the modal open (verified), tapping 'Terminée' AUTO-CLOSES the modal (verified). No mocked APIs. Telegram bot sends notifications on status updates (expected, not flagged). One minor data-only artifact: 2 legacy orders carry status 'Livré' (not in current ADMIN_STATUS_CHOICES), so the colored buckets show 15 + 9 + 9 = 33 while the 'Toutes' card shows 35. Counts are correctly computed for the 3 declared statuses; only the legacy 'Livré' rows are unbucketed. Pre-existing console warnings carried over from iter 3 (shadow* deprecated, pointerEvents deprecated, stale 'admin' route name in (tabs) layout) — not regressed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "theme.ts shadows (carried over)", "issue": "Console warning persists: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Same as iteration 3. Reference: /app/frontend/src/theme.ts."},
+      {"component": "pointerEvents prop (carried over)", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Same as iteration 3."},
+      {"component": "(tabs)/_layout stale 'admin' route (carried over)", "issue": "Console warning: '[Layout children]: No route named \"admin\" exists in nested children …'. Same as iteration 3."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_admin_orders_v4.py",
+    "/app/test_reports/pytest/iteration_4.xml"
+  ],
+  "action_items": [
+    "[Optional cleanup] Two legacy orders in db.orders carry status 'Livré' (no longer in ADMIN_STATUS_CHOICES). They appear in the 'Toutes' (35) count but are not bucketed by 'En cours'/'Terminée'/'Annulée' (15+9+9=33). Consider either (a) a one-shot migration that maps legacy 'Livré' → 'Terminée', or (b) updating the `counts` reducer in /app/frontend/app/admin/orders.tsx to bucket unknown statuses under 'Terminée' (since 'Livré' implies delivered). Cosmetic — no functional impact on the new flows.",
+    "[Carried over from iter 3] Migrate shadow* tokens in /app/frontend/src/theme.ts to boxShadow for RN Web; remove stale Stack.Screen name=\"admin\" in (tabs)/_layout.tsx; replace deprecated pointerEvents prop with style.pointerEvents.",
+    "[Carried over] Expo SDK patch versions still behind: expo@54.0.34, expo-font@14.0.11, expo-router@6.0.23. Run `npx expo install expo expo-font expo-router`."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/server.py:867-884 — DELETE and bulk-delete endpoints look clean: both behind require_admin, both return JSON with deleted count, bulk-delete short-circuits on empty list before hitting Mongo. Status code is 200 (not 204) which matches the contract '{status:ok, deleted:N}'.",
+    "/app/backend/server.py:97-98 — kind == 'amount' or kind == 'fixed' alias works as specified. The Pydantic PromoCodeIn validator still restricts admin POST to {percent, amount, amount_min}, so 'fixed' can only land in DB via legacy data or direct insertion — verified the read path handles it cleanly.",
+    "/app/frontend/app/admin/orders.tsx:97-103 — counts reducer silently ignores any o.status not in the predefined record; that's why 'Livré' legacy orders are invisible to the buckets. Either widen the buckets or normalise statuses server-side.",
+    "/app/frontend/app/admin/orders.tsx:125-142 — updateStatus auto-closes the modal only for 'Terminée'/'Annulée'; 'En cours' keeps the modal open — matches spec exactly.",
+    "/app/frontend/app/admin/orders.tsx:190-211 — confirmDeleteOne fires Alert.alert and on accept calls api.adminDeleteOrder then trims the order from local state and closes the modal. Good.",
+    "/app/frontend/app/admin/orders.tsx:374-394 — bulkBar is positioned absolute at bottom with paddingBottom: spacing.xl; the ScrollView contentContainerStyle uses paddingBottom: 140 in select mode so the last card is not occluded. Good UX.",
+    "/app/frontend/src/api.ts:204-210 — adminDeleteOrder/adminBulkDeleteOrders correctly typed and reuse the shared request() helper (Bearer header injection via setAdminToken). Good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_admin_orders_v4.py (new — 8 pytest cases for DELETE + bulk-delete + promo 'fixed' alias)",
+    "/app/test_reports/pytest/iteration_4.xml (junit report)"
+  ],
+  "success_rate": {"backend": "100% (8/8 new + 17/17 + 16/16 legacy still pass)", "frontend": "100% on all P0 flows for new admin orders features"},
+  "seed_data_creation": "Created and deleted ~5 test orders during the run (guest_id='TEST_v4_admin_orders'). Net-zero: DELETE and bulk-delete tests clean up after themselves. The temp promo code 'TESTFIXED10' (kind='fixed') is inserted and deleted within the same test.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Admin PIN 2937 works on first try (no rehash needed). PROMO5 still has kind='amount' in DB from iter 3 fix; the new 'fixed' alias means even if a future seed inserts kind='fixed', evaluate_promo will treat it like 'amount'. /admin/orders has 35 test orders left over (2 of them carry legacy status 'Livré'). All new testIDs verified on the live UI: admin-orders-filter-{all,En cours,Terminée,Annulée}, admin-orders-enter-select, admin-orders-cancel-select, admin-orders-select-all, admin-orders-bulk-bar, admin-orders-bulk-delete, admin-order-status-{En cours,Terminée,Annulée}, admin-order-cancel-btn, admin-order-delete-btn, admin-order-close. Telegram bot is configured and active — every PATCH to /api/admin/orders/{id} triggers a successful sendMessage 200 OK in backend logs.",
+  "rca_of_issue": "No new bugs to RCA in this iteration. Minor edge case: 2 legacy orders with status 'Livré' produce a 33 vs 35 discrepancy between the bucket counts and the 'Toutes' card — this is data drift, not a regression in the new feature code."
+}

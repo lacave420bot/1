@@ -94,7 +94,7 @@ def evaluate_promo(promo: dict, subtotal: float) -> tuple[float, Optional[str]]:
     if kind == "percent":
         d = round(subtotal * (value / 100.0), 2)
         return min(d, subtotal), None
-    if kind == "amount":
+    if kind == "amount" or kind == "fixed":
         return round(min(value, subtotal), 2), None
     if kind == "amount_min":
         ms = float(promo.get("min_subtotal", 0))
@@ -862,6 +862,26 @@ async def admin_update_order(order_id: str, payload: OrderStatusUpdate, _admin: 
         raise HTTPException(status_code=404, detail="Commande introuvable")
     updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
     return with_status(updated)
+
+
+@api_router.delete("/admin/orders/{order_id}")
+async def admin_delete_order(order_id: str, _admin: dict = Depends(require_admin)):
+    result = await db.orders.delete_one({"id": order_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Commande introuvable")
+    return {"status": "ok", "deleted": 1}
+
+
+class BulkDeleteOrdersIn(BaseModel):
+    ids: List[str]
+
+
+@api_router.post("/admin/orders/bulk-delete")
+async def admin_bulk_delete_orders(payload: BulkDeleteOrdersIn, _admin: dict = Depends(require_admin)):
+    if not payload.ids:
+        return {"status": "ok", "deleted": 0}
+    result = await db.orders.delete_many({"id": {"$in": payload.ids}})
+    return {"status": "ok", "deleted": result.deleted_count}
 
 
 @api_router.get("/admin/telegram")

@@ -201,6 +201,13 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ status }),
     }),
+  adminDeleteOrder: (id: string) =>
+    request<{ status: string; deleted: number }>(`/admin/orders/${id}`, { method: "DELETE" }),
+  adminBulkDeleteOrders: (ids: string[]) =>
+    request<{ status: string; deleted: number }>(`/admin/orders/bulk-delete`, {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    }),
   adminGetTelegram: () =>
     request<{ bot_token_masked: string; has_token: boolean; chat_id: string }>(
       `/admin/telegram`,

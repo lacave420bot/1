@@ -50,6 +50,7 @@ export const radius = {
 };
 
 export const font = {
+  xs: 10,
   sm: 12,
   base: 14,
   lg: 16,
