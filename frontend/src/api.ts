@@ -65,6 +65,7 @@ export type Order = {
   points_earned: number;
   total: number;
   status: string;
+  estimated_ready_time?: string | null;
   created_at: string;
 };
 
@@ -256,6 +257,11 @@ export const api = {
     request<Order>(`/admin/orders/${id}`, {
       method: "PATCH",
       body: JSON.stringify({ status }),
+    }),
+  adminUpdateOrderEstimatedTime: (id: string, estimated_ready_time: string | null) =>
+    request<Order>(`/admin/orders/${id}/estimated-time`, {
+      method: "PATCH",
+      body: JSON.stringify({ estimated_ready_time }),
     }),
   adminDeleteOrder: (id: string) =>
     request<{ status: string; deleted: number }>(`/admin/orders/${id}`, { method: "DELETE" }),

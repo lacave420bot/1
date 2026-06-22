@@ -12,6 +12,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -34,21 +35,36 @@ function confirmAction(title: string, message: string, onConfirm: () => void, co
   ]);
 }
 
-const STATUS_CHOICES = ["En cours", "Terminée", "Annulée"] as const;
+// All possible statuses (server-side authoritative list)
+// Statuses shown in the modal for a given order (depends on delivery mode)
+function statusChoicesFor(deliveryMode: string | undefined): string[] {
+  const isPickup = deliveryMode === "pickup";
+  return [
+    "En cours",
+    "En préparation",
+    isPickup ? "Commande prête" : "Commande au point de livraison",
+    "Annulée",
+  ];
+}
 
-type StatusKey = "all" | "En cours" | "Terminée" | "Annulée";
+// Filter pills: group "active" and "final" states for a cleaner UI
+type StatusKey = "all" | "active" | "ready" | "Annulée";
 
-const STAT_FILTERS: { id: StatusKey; label: string; color: string; bg: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { id: "all",      label: "Toutes",   color: "#FFFFFF", bg: "#1F2937", icon: "list" },
-  { id: "En cours", label: "En cours", color: "#7AB1FF", bg: "#11233F", icon: "time" },
-  { id: "Terminée", label: "Terminées", color: "#4ADE80", bg: "#0F2A20", icon: "checkmark-circle" },
-  { id: "Annulée",  label: "Annulées", color: "#FCA5A5", bg: "#3F1414", icon: "close-circle" },
+const STAT_FILTERS: { id: StatusKey; label: string; color: string; bg: string; icon: keyof typeof Ionicons.glyphMap; matches: (s: string) => boolean }[] = [
+  { id: "all",     label: "Toutes",      color: "#FFFFFF", bg: "#1F2937", icon: "list",              matches: () => true },
+  { id: "active",  label: "En cours",    color: "#7AB1FF", bg: "#11233F", icon: "time",              matches: (s) => s === "En cours" || s === "En préparation" },
+  { id: "ready",   label: "Prêtes",      color: "#4ADE80", bg: "#0F2A20", icon: "checkmark-circle",  matches: (s) => s === "Commande prête" || s === "Commande au point de livraison" },
+  { id: "Annulée", label: "Annulées",    color: "#FCA5A5", bg: "#3F1414", icon: "close-circle",      matches: (s) => s === "Annulée" },
 ];
 
 function statusColor(s: string): { bg: string; fg: string; icon: keyof typeof Ionicons.glyphMap } {
   switch (s) {
-    case "Terminée":
+    case "Commande prête":
       return { bg: "#0F2A20", fg: "#4ADE80", icon: "checkmark-circle" };
+    case "Commande au point de livraison":
+      return { bg: "#0F2538", fg: "#60A5FA", icon: "bicycle" };
+    case "En préparation":
+      return { bg: "#3A2E12", fg: "#FBBF24", icon: "restaurant" };
     case "Annulée":
       return { bg: "#3F1414", fg: "#FCA5A5", icon: "close-circle" };
     default:
@@ -78,6 +94,8 @@ export default function AdminOrdersScreen() {
   const [filter, setFilter] = useState<StatusKey>("all");
   const [selected, setSelected] = useState<Order | null>(null);
   const [updating, setUpdating] = useState(false);
+  const [etaInput, setEtaInput] = useState<string>("");
+  const [savingEta, setSavingEta] = useState(false);
 
   // Multi-select state
   const [selectMode, setSelectMode] = useState(false);
@@ -104,17 +122,25 @@ export default function AdminOrdersScreen() {
   }, [adminReady, isAuthenticated, router]);
 
   const filtered = useMemo(() => {
-    if (filter === "all") return orders;
-    return orders.filter((o) => o.status === filter);
+    const matcher = STAT_FILTERS.find((f) => f.id === filter)?.matches;
+    if (!matcher) return orders;
+    return orders.filter((o) => matcher(o.status));
   }, [orders, filter]);
 
   const counts = useMemo(() => {
-    const c: Record<string, number> = { all: orders.length, "En cours": 0, "Terminée": 0, "Annulée": 0 };
+    const c: Record<StatusKey, number> = { all: orders.length, active: 0, ready: 0, "Annulée": 0 };
     orders.forEach((o) => {
-      if (c[o.status] !== undefined) c[o.status] += 1;
+      STAT_FILTERS.forEach((f) => {
+        if (f.id !== "all" && f.matches(o.status)) c[f.id] += 1;
+      });
     });
     return c;
   }, [orders]);
+
+  // Sync ETA input when a different order is selected (or detail is reopened)
+  useEffect(() => {
+    setEtaInput(selected?.estimated_ready_time || "");
+  }, [selected?.id, selected?.estimated_ready_time]);
 
   if (!adminReady) {
     return (
@@ -142,8 +168,12 @@ export default function AdminOrdersScreen() {
       setUpdating(true);
       const updated = await api.adminUpdateOrderStatus(selected.id, status);
       setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
-      // Auto-close the modal after marking as finished or cancelled
-      if (status === "Terminée" || status === "Annulée") {
+      // Auto-close the modal after marking as final (Ready/Delivered/Cancelled)
+      const isFinal =
+        status === "Commande prête" ||
+        status === "Commande au point de livraison" ||
+        status === "Annulée";
+      if (isFinal) {
         setSelected(null);
       } else {
         setSelected(updated);
@@ -152,6 +182,41 @@ export default function AdminOrdersScreen() {
       Alert.alert("Erreur", e?.message || "Mise à jour échouée");
     } finally {
       setUpdating(false);
+    }
+  };
+
+  const onChangeEta = (raw: string) => {
+    // Auto-format as HH:MM while typing — keep only digits
+    const digits = raw.replace(/[^\d]/g, "").slice(0, 4);
+    if (digits.length <= 2) {
+      setEtaInput(digits);
+    } else {
+      setEtaInput(`${digits.slice(0, 2)}:${digits.slice(2)}`);
+    }
+  };
+
+  const saveEta = async (clear: boolean = false) => {
+    if (!selected) return;
+    const value = clear ? null : etaInput.trim();
+    if (!clear) {
+      if (!value) {
+        Alert.alert("Heure manquante", "Saisissez une heure au format HH:MM.");
+        return;
+      }
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) {
+        Alert.alert("Format invalide", "Utilisez HH:MM (par ex. 18:30).");
+        return;
+      }
+    }
+    try {
+      setSavingEta(true);
+      const updated = await api.adminUpdateOrderEstimatedTime(selected.id, value);
+      setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+      setSelected(updated);
+    } catch (e: any) {
+      Alert.alert("Erreur", e?.message || "Mise à jour de l'heure échouée");
+    } finally {
+      setSavingEta(false);
     }
   };
 
@@ -474,7 +539,7 @@ export default function AdminOrdersScreen() {
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>Modifier le statut</Text>
                   <View style={styles.statusGrid}>
-                    {STATUS_CHOICES.map((s) => {
+                    {statusChoicesFor(selected.delivery_mode).map((s) => {
                       const sc = statusColor(s);
                       const active = selected.status === s;
                       return (
@@ -489,7 +554,7 @@ export default function AdminOrdersScreen() {
                           testID={`admin-order-status-${s}`}
                         >
                           <Ionicons name={sc.icon} size={18} color={sc.fg} />
-                          <Text style={[styles.statusOptionText, { color: active ? sc.fg : colors.onSurface }]}>
+                          <Text style={[styles.statusOptionText, { color: active ? sc.fg : colors.onSurface }]} numberOfLines={2}>
                             {s}
                           </Text>
                           {active && <Ionicons name="checkmark" size={16} color={sc.fg} />}
@@ -501,6 +566,71 @@ export default function AdminOrdersScreen() {
                     <View style={{ alignItems: "center", paddingVertical: spacing.sm }}>
                       <ActivityIndicator size="small" color={colors.brand} />
                     </View>
+                  )}
+                </View>
+
+                {/* ETA section */}
+                <View style={styles.section}>
+                  <View style={styles.etaHeaderRow}>
+                    <Text style={styles.sectionTitle}>
+                      {selected.delivery_mode === "pickup"
+                        ? "Heure de retrait estimée"
+                        : "Heure de livraison estimée"}
+                    </Text>
+                    {!!selected.estimated_ready_time && (
+                      <View style={styles.etaBadge}>
+                        <Ionicons name="time" size={12} color="#FBBF24" />
+                        <Text style={styles.etaBadgeText}>
+                          {selected.estimated_ready_time}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.etaHint}>
+                    Une notification Telegram sera envoyée au client.
+                  </Text>
+                  <View style={styles.etaRow}>
+                    <View style={styles.etaInputWrap}>
+                      <Ionicons name="time-outline" size={18} color={colors.muted} />
+                      <TextInput
+                        value={etaInput}
+                        onChangeText={onChangeEta}
+                        placeholder="HH:MM"
+                        placeholderTextColor={colors.muted}
+                        keyboardType="number-pad"
+                        maxLength={5}
+                        style={styles.etaInput}
+                        testID="admin-eta-input"
+                      />
+                    </View>
+                    <Pressable
+                      style={[
+                        styles.etaSaveBtn,
+                        (savingEta || !etaInput) && styles.etaSaveBtnDisabled,
+                      ]}
+                      disabled={savingEta || !etaInput}
+                      onPress={() => saveEta(false)}
+                      testID="admin-eta-save"
+                    >
+                      {savingEta ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Text style={styles.etaSaveBtnText}>
+                          {selected.estimated_ready_time ? "Mettre à jour" : "Notifier"}
+                        </Text>
+                      )}
+                    </Pressable>
+                  </View>
+                  {!!selected.estimated_ready_time && (
+                    <Pressable
+                      onPress={() => saveEta(true)}
+                      style={styles.etaClearBtn}
+                      disabled={savingEta}
+                      testID="admin-eta-clear"
+                    >
+                      <Ionicons name="close-circle-outline" size={14} color={colors.muted} />
+                      <Text style={styles.etaClearText}>Effacer l&apos;heure</Text>
+                    </Pressable>
                   )}
                 </View>
 

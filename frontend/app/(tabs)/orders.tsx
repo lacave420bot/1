@@ -137,16 +137,17 @@ export default function OrdersScreen() {
                 <View
                   style={[
                     styles.statusBadge,
-                    o.status === "Terminée" && styles.statusBadgeDone,
+                    (o.status === "Commande prête" || o.status === "Commande au point de livraison") && styles.statusBadgeDone,
                     o.status === "Annulée" && styles.statusBadgeCancelled,
                   ]}
                 >
                   <Text
                     style={[
                       styles.statusText,
-                      o.status === "Terminée" && styles.statusTextDone,
+                      (o.status === "Commande prête" || o.status === "Commande au point de livraison") && styles.statusTextDone,
                       o.status === "Annulée" && styles.statusTextCancelled,
                     ]}
+                    numberOfLines={1}
                   >
                     {o.status}
                   </Text>
