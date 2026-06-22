@@ -1,12 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,41 +14,83 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { api, type Category, type Product } from "@/src/api";
+import { api, type Category, type Order, type Product } from "@/src/api";
 import { useCart, formatPrice } from "@/src/store/cart";
-import { colors, font, radius, shadows, spacing } from "@/src/theme";
+import { useLoyalty } from "@/src/store/loyalty";
+import { colors, font, gradients, radius, shadows, spacing } from "@/src/theme";
+
+type ActionTile = {
+  id: string;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  bg: string;
+  fg: string;
+  onPress: () => void;
+  badge?: number;
+};
+
+function formatRelativeDate(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const now = Date.now();
+    const diffMin = Math.floor((now - d.getTime()) / 60000);
+    if (diffMin < 1) return "À l'instant";
+    if (diffMin < 60) return `il y a ${diffMin} min`;
+    if (diffMin < 1440) return `il y a ${Math.floor(diffMin / 60)} h`;
+    return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
+  } catch {
+    return "";
+  }
+}
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { addItem, count, total } = useCart();
+  const { addItem, count, guestId, ready } = useCart();
+  const { loyalty, refresh: refreshLoyalty } = useLoyalty(guestId);
+
   const [categories, setCategories] = useState<Category[]>([]);
   const [popular, setPopular] = useState<Product[]>([]);
-  const [promos, setPromos] = useState<Product[]>([]);
+  const [recentOrders, setRecentOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
-      setLoading(true);
       setError(null);
-      const [cats, pop, pr] = await Promise.all([
+      const [cats, pop, orders] = await Promise.all([
         api.getCategories(),
         api.getProducts({ popular: true }),
-        api.getProducts({ promo: true }),
+        ready && guestId ? api.getOrders(guestId) : Promise.resolve([] as Order[]),
       ]);
       setCategories(cats);
       setPopular(pop);
-      setPromos(pr);
+      setRecentOrders(orders.slice(0, 3));
     } catch (e: any) {
       setError(e?.message || "Erreur de chargement.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [ready, guestId]);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshLoyalty();
+      if (ready && guestId) {
+        api.getOrders(guestId).then((o) => setRecentOrders(o.slice(0, 3))).catch(() => {});
+      }
+    }, [ready, guestId, refreshLoyalty]),
+  );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([load(), refreshLoyalty()]);
+    setRefreshing(false);
+  }, [load, refreshLoyalty]);
 
   if (loading) {
     return (
@@ -69,60 +111,149 @@ export default function HomeScreen() {
     );
   }
 
-  const heroPromo = promos[0];
+  const points = loyalty?.points_balance ?? 0;
+  const totalEarned = loyalty?.total_earned ?? 0;
+
+  const actions: ActionTile[] = [
+    {
+      id: "catalog",
+      label: "Catalogue",
+      icon: "grid",
+      bg: "#11233F",
+      fg: "#7AB1FF",
+      onPress: () => router.push("/(tabs)/catalog"),
+    },
+    {
+      id: "cart",
+      label: "Panier",
+      icon: "bag-handle",
+      bg: "#1A1A2E",
+      fg: "#B19CFF",
+      onPress: () => router.push("/(tabs)/cart"),
+      badge: count,
+    },
+    {
+      id: "orders",
+      label: "Commandes",
+      icon: "receipt",
+      bg: "#0F2A20",
+      fg: "#4ADE80",
+      onPress: () => router.push("/(tabs)/orders"),
+    },
+    {
+      id: "promo",
+      label: "Promotions",
+      icon: "pricetag",
+      bg: "#2A1A12",
+      fg: "#FB923C",
+      onPress: () => router.push({ pathname: "/(tabs)/catalog" }),
+    },
+  ];
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top"]} testID="home-screen">
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Header */}
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={styles.greetSm}>Bienvenue chez</Text>
-            <Text style={styles.greetLg}>Verte Vallée CBD</Text>
+    <View style={styles.root} testID="home-screen">
+      <SafeAreaView edges={["top"]} style={{ backgroundColor: colors.surface }}>
+        <View style={styles.topBar}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>V</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.topGreet}>Bonsoir</Text>
+            <Text style={styles.topBrand}>Verte Vallée</Text>
           </View>
           <Pressable
-            onPress={() => router.push("/(tabs)/catalog")}
-            style={styles.searchPill}
-            testID="home-search-pill"
+            style={styles.iconBtn}
+            onPress={() => router.push("/(tabs)/orders")}
+            testID="home-bell-btn"
             hitSlop={8}
           >
-            <Ionicons name="search" size={20} color={colors.onSurface} />
+            <Ionicons name="notifications-outline" size={20} color={colors.onSurface} />
           </Pressable>
         </View>
+      </SafeAreaView>
 
-        {/* Compliance banner */}
-        <View style={styles.complianceBanner} testID="home-compliance-banner">
-          <Ionicons name="shield-checkmark" size={18} color={colors.success} />
-          <Text style={styles.complianceText}>
-            Produits conformes — THC &lt; 0,3 % · Réservé aux adultes 18 ans et +
-          </Text>
-        </View>
-
-        {/* Hero promo */}
-        {heroPromo && (
-          <Pressable
-            style={styles.hero}
-            onPress={() => router.push(`/product/${heroPromo.id}`)}
-            testID="home-hero-promo"
+      <ScrollView
+        style={{ flex: 1, backgroundColor: colors.surface }}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.brand}
+          />
+        }
+      >
+        {/* Hero — Loyalty balance card */}
+        <Pressable
+          onPress={() => router.push("/(tabs)/catalog")}
+          style={styles.hero}
+          testID="home-loyalty-hero"
+        >
+          <LinearGradient
+            colors={gradients.heroBlue}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.heroGrad}
           >
-            <Image source={{ uri: heroPromo.image }} style={styles.heroImage} contentFit="cover" />
-            <LinearGradient
-              colors={["transparent", "rgba(0,0,0,0.7)"]}
-              style={styles.heroOverlay}
-            >
-              <View style={styles.heroBadge}>
-                <Text style={styles.heroBadgeText}>PROMO</Text>
+            <View style={styles.heroTopRow}>
+              <Text style={styles.heroLabel}>Cagnotte fidélité</Text>
+              <Ionicons name="gift" size={20} color="rgba(255,255,255,0.85)" />
+            </View>
+            <Text style={styles.heroAmount} testID="home-points-balance">
+              {formatPrice(points)}
+            </Text>
+            <Text style={styles.heroSub}>
+              {points > 0
+                ? `Utilisable dès votre prochaine commande`
+                : `Gagnez 1 € pour chaque 10 € dépensés`}
+            </Text>
+            <View style={styles.heroFooterRow}>
+              <View style={styles.heroChip}>
+                <Ionicons name="trending-up" size={12} color="#fff" />
+                <Text style={styles.heroChipText}>
+                  {formatPrice(totalEarned)} cumulés
+                </Text>
               </View>
-              <Text style={styles.heroTitle}>{heroPromo.name}</Text>
-              <Text style={styles.heroSubtitle}>
-                {formatPrice(heroPromo.price)} · Livraison rapide
-              </Text>
-            </LinearGradient>
-          </Pressable>
-        )}
+              <Ionicons name="arrow-forward" size={18} color="#fff" />
+            </View>
+          </LinearGradient>
+        </Pressable>
+
+        {/* Action grid */}
+        <View style={styles.actionsRow}>
+          {actions.map((a) => (
+            <Pressable
+              key={a.id}
+              style={styles.actionTile}
+              onPress={a.onPress}
+              testID={`home-action-${a.id}`}
+            >
+              <View style={[styles.actionIconWrap, { backgroundColor: a.bg }]}>
+                <Ionicons name={a.icon} size={22} color={a.fg} />
+                {a.badge && a.badge > 0 ? (
+                  <View style={styles.actionBadge}>
+                    <Text style={styles.actionBadgeText}>{a.badge}</Text>
+                  </View>
+                ) : null}
+              </View>
+              <Text style={styles.actionLabel}>{a.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        {/* Compliance card */}
+        <View style={styles.complianceCard}>
+          <View style={styles.complianceIcon}>
+            <Ionicons name="shield-checkmark" size={18} color="#4ADE80" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.complianceTitle}>Produits conformes</Text>
+            <Text style={styles.complianceSub}>
+              THC &lt; 0,3 % · Réservé aux 18 ans et +
+            </Text>
+          </View>
+        </View>
 
         {/* Categories */}
         <View style={styles.sectionHeader}>
@@ -149,7 +280,7 @@ export default function HomeScreen() {
               testID={`home-category-${c.id}`}
             >
               <View style={styles.catIconWrap}>
-                <Ionicons name={c.icon as any} size={26} color={colors.brand} />
+                <Ionicons name={c.icon as any} size={24} color={colors.onSurface} />
               </View>
               <Text style={styles.catName} numberOfLines={1}>
                 {c.name}
@@ -162,14 +293,14 @@ export default function HomeScreen() {
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Populaires</Text>
         </View>
-        <FlatList
-          data={popular}
+        <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.md }}
-          renderItem={({ item }) => (
+        >
+          {popular.map((item) => (
             <Pressable
+              key={item.id}
               style={styles.popularCard}
               onPress={() => router.push(`/product/${item.id}`)}
               testID={`home-popular-${item.id}`}
@@ -180,7 +311,7 @@ export default function HomeScreen() {
                   {item.name}
                 </Text>
                 <Text style={styles.productDesc} numberOfLines={1}>
-                  {item.description}
+                  {item.unit || item.description}
                 </Text>
                 <View style={styles.popularFooter}>
                   <Text style={styles.productPrice}>{formatPrice(item.price)}</Text>
@@ -190,49 +321,68 @@ export default function HomeScreen() {
                     hitSlop={8}
                     testID={`home-add-${item.id}`}
                   >
-                    <Ionicons name="add" size={18} color={colors.onBrandPrimary} />
+                    <Ionicons name="add" size={18} color="#fff" />
                   </Pressable>
                 </View>
               </View>
             </Pressable>
-          )}
-        />
+          ))}
+        </ScrollView>
 
-        {/* Promos grid */}
-        {promos.length > 1 && (
+        {/* Activity feed — recent orders */}
+        {recentOrders.length > 0 && (
           <>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Promotions</Text>
+              <Text style={styles.sectionTitle}>Activité</Text>
+              <Pressable onPress={() => router.push("/(tabs)/orders")}>
+                <Text style={styles.linkText}>Tout voir</Text>
+              </Pressable>
             </View>
-            <View style={styles.promoList}>
-              {promos.slice(1).map((p) => (
+            <View style={styles.activityList}>
+              {recentOrders.map((o) => (
                 <Pressable
-                  key={p.id}
-                  style={styles.promoRow}
-                  onPress={() => router.push(`/product/${p.id}`)}
-                  testID={`home-promo-${p.id}`}
+                  key={o.id}
+                  style={styles.activityRow}
+                  onPress={() => router.push(`/order/${o.id}`)}
+                  testID={`home-activity-${o.id}`}
                 >
-                  <Image source={{ uri: p.image }} style={styles.promoImg} contentFit="cover" />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.productTitle} numberOfLines={1}>{p.name}</Text>
-                    <Text style={styles.productDesc} numberOfLines={2}>{p.description}</Text>
-                    <Text style={styles.productPrice}>{formatPrice(p.price)}</Text>
-                  </View>
-                  <Pressable
-                    style={styles.addBtn}
-                    onPress={() => addItem(p)}
-                    hitSlop={8}
-                    testID={`home-promo-add-${p.id}`}
+                  <View
+                    style={[
+                      styles.activityIcon,
+                      {
+                        backgroundColor:
+                          o.status === "Livré" ? "#0F2A20" : "#11233F",
+                      },
+                    ]}
                   >
-                    <Ionicons name="add" size={18} color={colors.onBrandPrimary} />
-                  </Pressable>
+                    <Ionicons
+                      name={
+                        o.status === "Livré"
+                          ? "checkmark-circle"
+                          : o.status === "En livraison"
+                          ? "bicycle"
+                          : "restaurant"
+                      }
+                      size={20}
+                      color={o.status === "Livré" ? "#4ADE80" : "#7AB1FF"}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.activityTitle}>
+                      Commande #{o.id.slice(0, 6).toUpperCase()}
+                    </Text>
+                    <Text style={styles.activitySub}>
+                      {o.status} · {formatRelativeDate(o.created_at)}
+                    </Text>
+                  </View>
+                  <Text style={styles.activityAmount}>−{formatPrice(o.total)}</Text>
                 </Pressable>
               ))}
             </View>
           </>
         )}
 
-        <View style={{ height: count > 0 ? 100 : spacing.xl }} />
+        <View style={{ height: count > 0 ? 110 : spacing.xl }} />
       </ScrollView>
 
       {/* Floating cart bar */}
@@ -242,85 +392,159 @@ export default function HomeScreen() {
           onPress={() => router.push("/(tabs)/cart")}
           testID="home-floating-cart"
         >
-          <View style={styles.floatingCartLeft}>
-            <View style={styles.floatingCartBadge}>
-              <Text style={styles.floatingCartBadgeText}>{count}</Text>
+          <LinearGradient
+            colors={gradients.heroBlue}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.floatingCartInner}
+          >
+            <View style={styles.floatingCartLeft}>
+              <View style={styles.floatingCartBadge}>
+                <Text style={styles.floatingCartBadgeText}>{count}</Text>
+              </View>
+              <Text style={styles.floatingCartText}>Voir le panier</Text>
             </View>
-            <Text style={styles.floatingCartText}>Voir le panier</Text>
-          </View>
-          <Text style={styles.floatingCartTotal}>{formatPrice(total)}</Text>
+            <Ionicons name="arrow-forward" size={18} color="#fff" />
+          </LinearGradient>
         </Pressable>
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.surface },
+  root: { flex: 1, backgroundColor: colors.surface },
   center: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: colors.surface,
   },
-  scrollContent: { paddingBottom: spacing.xxl },
-  headerRow: {
+  topBar: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
+    paddingTop: spacing.sm,
     paddingBottom: spacing.md,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     gap: spacing.md,
   },
-  greetSm: { color: colors.muted, fontSize: font.sm, fontWeight: "500" },
-  greetLg: { color: colors.onSurface, fontSize: font.xxl, fontWeight: "700" },
-  searchPill: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceTertiary,
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.brand,
     alignItems: "center",
     justifyContent: "center",
   },
-  complianceBanner: {
-    flexDirection: "row",
+  avatarText: { color: "#fff", fontSize: font.lg, fontWeight: "800" },
+  topGreet: { color: colors.muted, fontSize: font.sm },
+  topBrand: { color: colors.onSurface, fontSize: font.lg, fontWeight: "700" },
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surfaceSecondary,
     alignItems: "center",
-    gap: spacing.sm,
-    backgroundColor: "#ECFDF5",
-    borderWidth: 1,
-    borderColor: "#A7F3D0",
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
+    justifyContent: "center",
   },
-  complianceText: { color: "#065F46", fontSize: font.sm, fontWeight: "600", flex: 1 },
+  scrollContent: { paddingBottom: spacing.xxl },
+
+  // Hero
   hero: {
     marginHorizontal: spacing.lg,
-    height: 180,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     overflow: "hidden",
-    ...shadows.card,
+    ...shadows.floating,
   },
-  heroImage: { width: "100%", height: "100%" },
-  heroOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    padding: spacing.lg,
-    justifyContent: "flex-end",
+  heroGrad: { padding: spacing.xl, gap: spacing.sm },
+  heroTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
-  heroBadge: {
-    backgroundColor: colors.brand,
-    alignSelf: "flex-start",
+  heroLabel: { color: "rgba(255,255,255,0.85)", fontSize: font.base, fontWeight: "600" },
+  heroAmount: {
+    color: "#fff",
+    fontSize: font.xxxl,
+    fontWeight: "800",
+    letterSpacing: -1,
+  },
+  heroSub: { color: "rgba(255,255,255,0.75)", fontSize: font.sm },
+  heroFooterRow: {
+    marginTop: spacing.md,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  heroChip: {
+    flexDirection: "row",
+    gap: 6,
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.15)",
     paddingHorizontal: spacing.md,
-    paddingVertical: 4,
+    paddingVertical: 6,
     borderRadius: radius.pill,
-    marginBottom: spacing.sm,
   },
-  heroBadgeText: { color: colors.onBrandPrimary, fontWeight: "700", fontSize: font.sm },
-  heroTitle: { color: "#fff", fontSize: font.xl, fontWeight: "700" },
-  heroSubtitle: { color: "#fff", fontSize: font.base, opacity: 0.9, marginTop: 2 },
+  heroChipText: { color: "#fff", fontSize: font.sm, fontWeight: "600" },
+
+  // Actions grid
+  actionsRow: {
+    flexDirection: "row",
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.xl,
+    gap: spacing.md,
+  },
+  actionTile: { flex: 1, alignItems: "center", gap: spacing.sm },
+  actionIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.lg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionBadge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    backgroundColor: colors.error,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: colors.surface,
+  },
+  actionBadgeText: { color: "#fff", fontSize: 10, fontWeight: "800" },
+  actionLabel: { color: colors.onSurface, fontSize: font.sm, fontWeight: "600" },
+
+  // Compliance
+  complianceCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  complianceIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#0F2A20",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  complianceTitle: { color: colors.onSurface, fontSize: font.base, fontWeight: "700" },
+  complianceSub: { color: colors.muted, fontSize: font.sm, marginTop: 2 },
+
+  // Sections
   sectionHeader: {
     paddingHorizontal: spacing.lg,
     marginTop: spacing.xl,
@@ -329,25 +553,32 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  sectionTitle: { fontSize: font.xl, fontWeight: "700", color: colors.onSurface },
-  linkText: { color: colors.brand, fontSize: font.base, fontWeight: "600" },
+  sectionTitle: { fontSize: font.xl, fontWeight: "800", color: colors.onSurface },
+  linkText: { color: colors.brand, fontSize: font.base, fontWeight: "700" },
+
+  // Categories
   catRow: { paddingHorizontal: spacing.lg, gap: spacing.md },
-  catCard: { width: 78, alignItems: "center", gap: spacing.sm, flexShrink: 0 },
+  catCard: { width: 76, alignItems: "center", gap: spacing.sm, flexShrink: 0 },
   catIconWrap: {
     width: 64,
     height: 64,
     borderRadius: radius.lg,
-    backgroundColor: colors.brandSecondary,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: "center",
     justifyContent: "center",
   },
   catName: { fontSize: font.sm, color: colors.onSurface, textAlign: "center", fontWeight: "500" },
+
+  // Popular
   popularCard: {
     width: 180,
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.lg,
     overflow: "hidden",
-    ...shadows.card,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   popularImage: { width: "100%", height: 110 },
   popularBody: { padding: spacing.md, gap: 4 },
@@ -357,9 +588,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  productTitle: { fontSize: font.lg, fontWeight: "700", color: colors.onSurface },
+  productTitle: { fontSize: font.base, fontWeight: "700", color: colors.onSurface },
   productDesc: { fontSize: font.sm, color: colors.muted },
-  productPrice: { fontSize: font.lg, fontWeight: "700", color: colors.brand },
+  productPrice: { fontSize: font.lg, fontWeight: "800", color: colors.onSurface },
   addBtn: {
     width: 32,
     height: 32,
@@ -368,30 +599,51 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  promoList: { paddingHorizontal: spacing.lg, gap: spacing.md },
-  promoRow: {
-    flexDirection: "row",
+
+  // Activity
+  activityList: {
+    marginHorizontal: spacing.lg,
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: "hidden",
+  },
+  activityRow: {
+    flexDirection: "row",
+    alignItems: "center",
     padding: spacing.md,
     gap: spacing.md,
-    alignItems: "center",
-    ...shadows.card,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
-  promoImg: { width: 64, height: 64, borderRadius: radius.md },
+  activityIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  activityTitle: { color: colors.onSurface, fontSize: font.base, fontWeight: "700" },
+  activitySub: { color: colors.muted, fontSize: font.sm, marginTop: 2 },
+  activityAmount: { color: colors.onSurface, fontSize: font.base, fontWeight: "700" },
+
+  // Floating cart
   floatingCart: {
     position: "absolute",
     left: spacing.lg,
     right: spacing.lg,
     bottom: spacing.lg,
-    backgroundColor: colors.brand,
-    borderRadius: radius.lg,
+    borderRadius: radius.pill,
+    overflow: "hidden",
+    ...shadows.floating,
+  },
+  floatingCartInner: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    ...shadows.floating,
   },
   floatingCartLeft: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   floatingCartBadge: {
@@ -403,9 +655,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  floatingCartBadgeText: { color: "#fff", fontSize: font.sm, fontWeight: "700" },
+  floatingCartBadgeText: { color: "#fff", fontSize: font.sm, fontWeight: "800" },
   floatingCartText: { color: "#fff", fontWeight: "700", fontSize: font.lg },
-  floatingCartTotal: { color: "#fff", fontWeight: "700", fontSize: font.lg },
+
   errorTitle: { color: colors.error, fontSize: font.lg, fontWeight: "600", marginBottom: spacing.md },
   retryBtn: {
     backgroundColor: colors.brand,
