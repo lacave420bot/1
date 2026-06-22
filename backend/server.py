@@ -1029,6 +1029,84 @@ async def _telegram_answer_callback(callback_id: str, text: str = "") -> None:
         logger.warning("[telegram] answer cb error: %s", e)
 
 
+async def send_customer_status_dm(order: Order) -> None:
+    """Send a friendly DM to the customer via the Telegram bot when their order
+    status changes. Requires the customer to be linked to a Telegram account
+    (via Magic Link auth). Silently skips guest-only orders."""
+    user_id = order.user_id
+    if not user_id:
+        return
+    user = await db.users.find_one(
+        {"id": user_id},
+        {"_id": 0, "telegram_user_id": 1, "name": 1},
+    )
+    if not user:
+        return
+    tg_user_id = user.get("telegram_user_id")
+    if not tg_user_id:
+        return
+    token, _ = await _get_telegram_config()
+    if not token:
+        return
+
+    order_status = order.status or ""
+    is_pickup = (order.delivery_mode or "delivery") == "pickup"
+    short_id = order.id[:8].upper()
+    first_name = (user.get("name") or order.customer_name or "").strip().split(" ")[0]
+    greet = f"Bonjour {_esc(first_name)} ! " if first_name else ""
+
+    if order_status == "Terminée":
+        if is_pickup:
+            title = "🦁 Votre commande est prête !"
+            body = (
+                f"{greet}Votre commande <b>#{short_id}</b> est <b>prête</b> à être retirée "
+                f"à la boutique.\n\nÀ tout de suite ! 🌿"
+            )
+        else:
+            title = "✅ Commande livrée"
+            body = (
+                f"{greet}Votre commande <b>#{short_id}</b> a été <b>livrée</b>. "
+                f"Bonne dégustation 🌿\n\nMerci pour votre confiance !"
+            )
+    elif order_status == "Annulée":
+        title = "❌ Commande annulée"
+        body = (
+            f"{greet}Votre commande <b>#{short_id}</b> a été <b>annulée</b>.\n\n"
+            f"Si vous avez la moindre question, contactez-nous directement en boutique."
+        )
+    elif order_status == "En cours":
+        title = "🔄 Commande relancée"
+        body = (
+            f"{greet}Votre commande <b>#{short_id}</b> est <b>de nouveau en cours</b> "
+            f"de préparation. Nous vous prévenons dès qu'elle est prête."
+        )
+    else:
+        return  # Unknown status: skip silently
+
+    total_str = f"{order.total:.2f} €".replace(".", ",")
+    text = f"<b>{title}</b>\n\n{body}\n\n💰 Total : <b>{total_str}</b>"
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client_h:
+            r = await client_h.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={
+                    "chat_id": tg_user_id,
+                    "text": text,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True,
+                },
+            )
+            if r.status_code != 200:
+                logger.warning(
+                    "[telegram] customer dm non-200 (%s): %s",
+                    r.status_code,
+                    r.text[:200],
+                )
+    except Exception as e:
+        logger.warning("[telegram] customer dm error: %s", e)
+
+
 async def send_low_stock_alert(alerts: list[dict]) -> None:
     """Send a Telegram message to the admin when one or more variants
     crossed their low-stock threshold or just went out of stock."""
@@ -1391,6 +1469,10 @@ async def admin_update_order(order_id: str, payload: OrderStatusUpdate, _admin: 
             await _telegram_edit_order_message(Order(**updated_order))
         except Exception as e:
             logger.warning("[telegram] edit on status change: %s", e)
+        try:
+            await send_customer_status_dm(Order(**updated_order))
+        except Exception as e:
+            logger.warning("[telegram] customer dm on status change: %s", e)
 
     return updated_order
 
@@ -1750,6 +1832,10 @@ async def telegram_webhook(request: Request):
         await _telegram_edit_order_message(Order(**updated_order))
     except Exception as e:
         logger.warning("[telegram] edit on webhook: %s", e)
+    try:
+        await send_customer_status_dm(Order(**updated_order))
+    except Exception as e:
+        logger.warning("[telegram] customer dm on webhook: %s", e)
 
     feedback = {
         "Terminée": "✅ Commande marquée comme terminée",
