@@ -21,6 +21,11 @@ import { colors, font, radius, shadows, spacing } from "@/src/theme";
 
 type DeliveryMode = "delivery" | "pickup";
 
+function getEstimatedWindow(mode: DeliveryMode): string {
+  if (mode === "pickup") return "Retrait estimé sous 20 à 35 min.";
+  return "Prise en charge estimée sous 35 à 55 min.";
+}
+
 export default function CheckoutScreen() {
   const router = useRouter();
   const {
@@ -114,6 +119,7 @@ export default function CheckoutScreen() {
             {isPickup ? "Retrait sur place" : "Livraison à domicile"}
           </Text>
         </View>
+        <Text style={styles.successEtaText}>{getEstimatedWindow(success.delivery_mode)}</Text>
         <Text style={styles.successTotal}>Total : {formatPrice(success.total)}</Text>
         <Pressable
           style={styles.successBtn}
@@ -193,14 +199,12 @@ export default function CheckoutScreen() {
                 </Text>
               </Pressable>
             </View>
-            {mode === "pickup" && (
-              <View style={styles.pickupNote}>
-                <Ionicons name="information-circle" size={18} color={colors.brand} />
-                <Text style={styles.pickupNoteText}>
-                  Vous serez contacté dès que votre commande sera prête à être retirée à la boutique.
-                </Text>
-              </View>
-            )}
+            <View style={styles.pickupNote}>
+              <Ionicons name="information-circle" size={18} color={colors.brand} />
+              <Text style={styles.pickupNoteText}>
+                {getEstimatedWindow(mode)} Vous serez notifié dès que la commande sera prête.
+              </Text>
+            </View>
           </View>
 
           {/* Customer information */}
@@ -582,6 +586,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   successModeText: { color: colors.onSurface, fontWeight: "700", fontSize: font.base },
+  successEtaText: { color: colors.muted, fontSize: font.sm, textAlign: "center" },
   successTotal: { color: colors.brand, fontSize: font.xl, fontWeight: "700", marginTop: spacing.sm },
   successBtn: {
     marginTop: spacing.lg,

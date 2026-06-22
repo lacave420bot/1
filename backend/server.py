@@ -915,6 +915,12 @@ def _esc(s) -> str:
     return html_lib.escape(str(s or ""), quote=False)
 
 
+def _estimated_window_label(delivery_mode: str) -> str:
+    if (delivery_mode or "delivery") == "pickup":
+        return "Retrait estimé sous 20 à 35 min"
+    return "Prise en charge estimée sous 35 à 55 min"
+
+
 def _format_order_html(order: Order) -> str:
     is_pickup = (order.delivery_mode or "delivery") == "pickup"
     mode_line = "🏪 <b>Retrait sur place</b>" if is_pickup else "🚚 <b>Livraison</b>"
@@ -922,6 +928,7 @@ def _format_order_html(order: Order) -> str:
         f"🛒 <b>Nouvelle commande</b> #{_esc(order.id[:8].upper())}",
         f"👤 <b>{_esc(order.customer_name)}</b>" + (f" · {_esc(order.phone)}" if order.phone else ""),
         mode_line,
+        f"⏱️ <b>{_esc(_estimated_window_label(order.delivery_mode))}</b>",
     ]
     if not is_pickup and order.address:
         lines.append(f"📍 {_esc(order.address)}")
