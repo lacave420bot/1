@@ -52,7 +52,7 @@ function formatRelativeDate(iso: string): string {
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { count, guestId, ready } = useCart();
+  const { count, guestId } = useCart();
   const { isAuthenticated: isAdmin } = useAdmin();
   const { loyalty, refresh: refreshLoyalty } = useLoyalty(guestId);
 
@@ -66,20 +66,29 @@ export default function HomeScreen() {
   const load = useCallback(async () => {
     try {
       setError(null);
-      const [cats, pop, orders] = await Promise.all([
+      const [cats, pop] = await Promise.all([
         api.getCategories(),
         api.getProducts({ popular: true }),
-        ready && guestId ? api.getOrders(guestId) : Promise.resolve([] as Order[]),
       ]);
       setCategories(cats);
       setPopular(pop);
-      setRecentOrders(orders.slice(0, 3));
+      // Only load orders list for the admin (PIN-authenticated)
+      if (isAdmin) {
+        try {
+          const adminOrders = await api.adminListOrders();
+          setRecentOrders(adminOrders.slice(0, 3));
+        } catch {
+          setRecentOrders([]);
+        }
+      } else {
+        setRecentOrders([]);
+      }
     } catch (e: any) {
       setError(e?.message || "Erreur de chargement.");
     } finally {
       setLoading(false);
     }
-  }, [ready, guestId]);
+  }, [isAdmin]);
 
   useEffect(() => {
     load();
@@ -88,10 +97,12 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       refreshLoyalty();
-      if (ready && guestId) {
-        api.getOrders(guestId).then((o) => setRecentOrders(o.slice(0, 3))).catch(() => {});
+      if (isAdmin) {
+        api.adminListOrders().then((o) => setRecentOrders(o.slice(0, 3))).catch(() => {});
+      } else {
+        setRecentOrders([]);
       }
-    }, [ready, guestId, refreshLoyalty]),
+    }, [isAdmin, refreshLoyalty]),
   );
 
   const onRefresh = useCallback(async () => {
@@ -146,7 +157,7 @@ export default function HomeScreen() {
       icon: "receipt",
       bg: "#0F2A20",
       fg: "#4ADE80",
-      onPress: () => router.push("/(tabs)/orders"),
+      onPress: () => router.push(isAdmin ? "/admin/orders" : "/admin/login"),
     },
     {
       id: "promo",
@@ -171,7 +182,7 @@ export default function HomeScreen() {
           </View>
           <Pressable
             style={styles.iconBtn}
-            onPress={() => router.push(isAdmin ? "/admin/orders" : "/(tabs)/orders")}
+            onPress={() => router.push(isAdmin ? "/admin/orders" : "/admin/login")}
             testID="home-bell-btn"
             hitSlop={8}
           >
@@ -368,7 +379,7 @@ export default function HomeScreen() {
           <>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Activité</Text>
-              <Pressable onPress={() => router.push("/(tabs)/orders")}>
+              <Pressable onPress={() => router.push("/admin/orders")}>
                 <Text style={styles.linkText}>Tout voir</Text>
               </Pressable>
             </View>

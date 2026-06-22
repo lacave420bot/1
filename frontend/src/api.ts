@@ -47,14 +47,38 @@ export type Order = {
   address: string;
   phone: string;
   notes: string;
+  delivery_mode?: "delivery" | "pickup";
   items: OrderItem[];
   subtotal: number;
   delivery_fee: number;
+  promo_code?: string | null;
+  discount_amount: number;
   points_used: number;
   points_earned: number;
   total: number;
   status: string;
   created_at: string;
+};
+
+export type PromoCode = {
+  id: string;
+  code: string;
+  kind: "percent" | "amount" | "amount_min";
+  value: number;
+  min_subtotal: number;
+  max_uses: number | null;
+  times_used: number;
+  expires_at: string | null;
+  enabled: boolean;
+  created_at: string;
+};
+
+export type PromoValidateResult = {
+  valid: boolean;
+  code?: string | null;
+  kind?: string | null;
+  discount: number;
+  error?: string | null;
 };
 
 export type Loyalty = {
@@ -123,8 +147,9 @@ export const api = {
     address: string;
     phone: string;
     notes?: string;
-    use_points?: number;
-    items: { product_id: string; quantity: number }[];
+    delivery_mode?: "delivery" | "pickup";
+    promo_code?: string | null;
+    items: { product_id: string; quantity: number; variant_label?: string }[];
   }) =>
     request<Order>(`/orders`, {
       method: "POST",
@@ -192,4 +217,31 @@ export const api = {
     ),
   adminTestTelegram: () =>
     request<{ status: string }>(`/admin/telegram/test`, { method: "POST" }),
+
+  validatePromo: (code: string, subtotal: number) =>
+    request<PromoValidateResult>(`/promo/validate`, {
+      method: "POST",
+      body: JSON.stringify({ code, subtotal }),
+    }),
+  adminListPromos: () => request<PromoCode[]>(`/admin/promo-codes`),
+  adminCreatePromo: (body: {
+    code: string;
+    kind: "percent" | "amount" | "amount_min";
+    value: number;
+    min_subtotal?: number;
+    max_uses?: number | null;
+    expires_at?: string | null;
+    enabled?: boolean;
+  }) =>
+    request<PromoCode>(`/admin/promo-codes`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  adminUpdatePromo: (id: string, body: Partial<PromoCode>) =>
+    request<PromoCode>(`/admin/promo-codes/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  adminDeletePromo: (id: string) =>
+    request<{ status: string }>(`/admin/promo-codes/${id}`, { method: "DELETE" }),
 };

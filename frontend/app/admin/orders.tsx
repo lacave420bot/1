@@ -229,10 +229,27 @@ export default function AdminOrdersScreen() {
             {selected && (
               <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}>
                 <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Client</Text>
+                  <View style={styles.modeHeader}>
+                    <Text style={styles.sectionTitle}>Client</Text>
+                    <View style={[
+                      styles.modePill,
+                      (selected.delivery_mode === "pickup") ? styles.modePillPickup : styles.modePillDelivery,
+                    ]}>
+                      <Ionicons
+                        name={selected.delivery_mode === "pickup" ? "storefront" : "bicycle"}
+                        size={12}
+                        color={colors.onSurface}
+                      />
+                      <Text style={styles.modePillText}>
+                        {selected.delivery_mode === "pickup" ? "Sur place" : "Livraison"}
+                      </Text>
+                    </View>
+                  </View>
                   <Info icon="person-outline" text={selected.customer_name} />
-                  <Info icon="call-outline" text={selected.phone} />
-                  <Info icon="location-outline" text={selected.address} />
+                  {!!selected.phone && <Info icon="call-outline" text={selected.phone} />}
+                  {selected.delivery_mode !== "pickup" && !!selected.address && (
+                    <Info icon="location-outline" text={selected.address} />
+                  )}
                   {!!selected.notes && <Info icon="document-text-outline" text={selected.notes} />}
                   <Info
                     icon="time-outline"
@@ -254,8 +271,12 @@ export default function AdminOrdersScreen() {
                   ))}
                   <View style={styles.divider} />
                   <Row label="Sous-total" value={formatPrice(selected.subtotal)} />
-                  {selected.points_used > 0 && (
-                    <Row label="Fidélité utilisée" value={`− ${formatPrice(selected.points_used)}`} valueColor={colors.brand} />
+                  {selected.discount_amount > 0 && (
+                    <Row
+                      label={`Réduction${selected.promo_code ? ` (${selected.promo_code})` : ""}`}
+                      value={`− ${formatPrice(selected.discount_amount)}`}
+                      valueColor={colors.success}
+                    />
                   )}
                   <Row label="Total payé" value={formatPrice(selected.total)} bold />
                 </View>
@@ -379,6 +400,19 @@ const styles = StyleSheet.create({
   modalTitle: { color: colors.onSurface, fontSize: font.xl, fontWeight: "800" },
   section: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, padding: spacing.lg, gap: spacing.md, borderWidth: 1, borderColor: colors.border },
   sectionTitle: { color: colors.onSurface, fontSize: font.lg, fontWeight: "800" },
+  modeHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  modePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  modePillDelivery: { backgroundColor: "#11233F", borderColor: "#1F3C66" },
+  modePillPickup: { backgroundColor: "#0F2A20", borderColor: "#1A4D38" },
+  modePillText: { color: colors.onSurface, fontSize: font.sm, fontWeight: "700" },
   infoRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   infoText: { color: colors.onSurface, fontSize: font.base, flex: 1 },
   itemRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: spacing.xs },

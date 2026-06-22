@@ -7,11 +7,13 @@ import React, {
   useState,
 } from "react";
 
+import { api } from "@/src/api";
 import { storage } from "@/src/utils/storage";
 import type { Product } from "@/src/api";
 
 const CART_STORAGE_KEY = "cart_items_v1";
 const GUEST_ID_KEY = "guest_id_v1";
+const PROMO_STORAGE_KEY = "cart_promo_v1";
 
 export type CartLine = {
   product: Product;
@@ -22,12 +24,20 @@ export type CartLine = {
 
 type CartItemPersist = CartLine;
 
+type PromoState = { code: string; discount: number; kind?: string | null };
+
 type CartContextValue = {
   items: CartLine[];
   guestId: string;
   count: number;
   subtotal: number;
+  discount: number;
   total: number;
+  promoCode: string | null;
+  promoError: string | null;
+  promoValidating: boolean;
+  applyPromo: (code: string) => Promise<boolean>;
+  clearPromo: () => void;
   addItem: (product: Product, variantLabel: string, unitPrice: number, qty?: number) => void;
   setQuantity: (lineKey: string, qty: number) => void;
   removeItem: (lineKey: string) => void;
@@ -54,6 +64,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartLine[]>([]);
   const [guestId, setGuestId] = useState<string>("");
   const [ready, setReady] = useState(false);
+  const [promo, setPromo] = useState<PromoState | null>(null);
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [promoValidating, setPromoValidating] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -62,9 +75,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         try {
           const parsed = JSON.parse(raw) as CartItemPersist[];
           if (Array.isArray(parsed)) {
-            // Filter out legacy items (pre-variants)
             setItems(parsed.filter((l) => l && l.variantLabel && typeof l.unitPrice === "number"));
           }
+        } catch { /* ignore */ }
+      }
+      const promoRaw = (await storage.getItem(PROMO_STORAGE_KEY, "")) as string;
+      if (promoRaw) {
+        try {
+          const parsed = JSON.parse(promoRaw) as PromoState;
+          if (parsed && parsed.code) setPromo(parsed);
         } catch { /* ignore */ }
       }
       let gid = (await storage.getItem(GUEST_ID_KEY, "")) as string;
@@ -81,6 +100,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     if (!ready) return;
     storage.setItem(CART_STORAGE_KEY, JSON.stringify(items));
   }, [items, ready]);
+
+  useEffect(() => {
+    if (!ready) return;
+    if (promo) {
+      storage.setItem(PROMO_STORAGE_KEY, JSON.stringify(promo));
+    } else {
+      storage.removeItem(PROMO_STORAGE_KEY);
+    }
+  }, [promo, ready]);
 
   const addItem = useCallback(
     (product: Product, variantLabel: string, unitPrice: number, qty: number = 1) => {
@@ -111,20 +139,107 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setItems((prev) => prev.filter((l) => lineKey(l.product.id, l.variantLabel) !== key));
   }, []);
 
-  const clear = useCallback(() => setItems([]), []);
+  const clear = useCallback(() => {
+    setItems([]);
+    setPromo(null);
+    setPromoError(null);
+  }, []);
 
-  const { count, subtotal, total } = useMemo(() => {
-    const count = items.reduce((acc, l) => acc + l.quantity, 0);
-    const subtotal = items.reduce((acc, l) => acc + l.unitPrice * l.quantity, 0);
-    return { count, subtotal: Math.round(subtotal * 100) / 100, total: Math.round(subtotal * 100) / 100 };
+  const { count, subtotal } = useMemo(() => {
+    const c = items.reduce((acc, l) => acc + l.quantity, 0);
+    const s = items.reduce((acc, l) => acc + l.unitPrice * l.quantity, 0);
+    return { count: c, subtotal: Math.round(s * 100) / 100 };
   }, [items]);
 
-  const value = useMemo(
+  // Re-validate promo whenever subtotal changes so the displayed discount stays in sync
+  useEffect(() => {
+    if (!promo || !ready) return;
+    let aborted = false;
+    (async () => {
+      try {
+        const res = await api.validatePromo(promo.code, subtotal);
+        if (aborted) return;
+        if (!res.valid) {
+          setPromo(null);
+          setPromoError(res.error || "Code non valide pour ce panier.");
+        } else {
+          setPromo({ code: res.code || promo.code, discount: res.discount, kind: res.kind });
+          setPromoError(null);
+        }
+      } catch {
+        // silent
+      }
+    })();
+    return () => { aborted = true; };
+  }, [subtotal, ready]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const discount = useMemo(() => {
+    if (!promo) return 0;
+    return Math.min(promo.discount, subtotal);
+  }, [promo, subtotal]);
+
+  const total = useMemo(
+    () => Math.round(Math.max(0, subtotal - discount) * 100) / 100,
+    [subtotal, discount],
+  );
+
+  const applyPromo = useCallback(
+    async (code: string): Promise<boolean> => {
+      const clean = code.trim().toUpperCase();
+      if (!clean) {
+        setPromoError("Veuillez saisir un code.");
+        return false;
+      }
+      setPromoValidating(true);
+      setPromoError(null);
+      try {
+        const res = await api.validatePromo(clean, subtotal);
+        if (!res.valid) {
+          setPromoError(res.error || "Code invalide.");
+          setPromo(null);
+          return false;
+        }
+        setPromo({ code: res.code || clean, discount: res.discount, kind: res.kind });
+        return true;
+      } catch (e: any) {
+        setPromoError(e?.message || "Erreur lors de la validation.");
+        return false;
+      } finally {
+        setPromoValidating(false);
+      }
+    },
+    [subtotal],
+  );
+
+  const clearPromo = useCallback(() => {
+    setPromo(null);
+    setPromoError(null);
+  }, []);
+
+  const value = useMemo<CartContextValue>(
     () => ({
-      items, guestId, count, subtotal, total,
-      addItem, setQuantity, removeItem, clear, ready,
+      items,
+      guestId,
+      count,
+      subtotal,
+      discount,
+      total,
+      promoCode: promo?.code ?? null,
+      promoError,
+      promoValidating,
+      applyPromo,
+      clearPromo,
+      addItem,
+      setQuantity,
+      removeItem,
+      clear,
+      ready,
     }),
-    [items, guestId, count, subtotal, total, addItem, setQuantity, removeItem, clear, ready],
+    [
+      items, guestId, count, subtotal, discount, total,
+      promo, promoError, promoValidating, applyPromo, clearPromo,
+      addItem, setQuantity, removeItem, clear, ready,
+    ],
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

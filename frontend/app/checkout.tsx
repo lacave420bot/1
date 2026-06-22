@@ -16,38 +16,49 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api } from "@/src/api";
 import { useCart, formatPrice } from "@/src/store/cart";
-import { useLoyalty } from "@/src/store/loyalty";
 import { colors, font, radius, shadows, spacing } from "@/src/theme";
+
+type DeliveryMode = "delivery" | "pickup";
 
 export default function CheckoutScreen() {
   const router = useRouter();
-  const { items, subtotal, guestId, clear } = useCart();
-  const { loyalty, refresh: refreshLoyalty } = useLoyalty(guestId);
+  const {
+    items, subtotal, discount, total, guestId, clear,
+    promoCode, promoError, promoValidating, applyPromo, clearPromo,
+  } = useCart();
+
+  const [mode, setMode] = useState<DeliveryMode>("delivery");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [notes, setNotes] = useState("");
-  const [usePoints, setUsePoints] = useState(false);
+  const [promoInput, setPromoInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState<{
     id: string;
     total: number;
-    points_earned: number;
-    points_used: number;
+    delivery_mode: DeliveryMode;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const availablePoints = loyalty?.points_balance ?? 0;
-  const pointsApplied = usePoints ? Math.min(availablePoints, subtotal) : 0;
-  const discountedSubtotal = Math.max(0, subtotal - pointsApplied);
-  const total = Math.round(discountedSubtotal * 100) / 100;
-  const pointsToEarn = Math.floor(discountedSubtotal / 10);
+  const canSubmit =
+    name.trim().length > 0 &&
+    items.length > 0 &&
+    (mode === "pickup" || address.trim().length > 0);
 
-  const canSubmit = name.trim() && address.trim() && items.length > 0;
+  const submitPromo = async () => {
+    if (!promoInput.trim()) return;
+    const ok = await applyPromo(promoInput);
+    if (ok) setPromoInput("");
+  };
 
   const submit = async () => {
     if (!canSubmit) {
-      setError("Veuillez remplir tous les champs requis.");
+      setError(
+        mode === "delivery"
+          ? "Veuillez remplir le nom et l'adresse."
+          : "Veuillez remplir votre nom."
+      );
       return;
     }
     try {
@@ -56,20 +67,23 @@ export default function CheckoutScreen() {
       const order = await api.createOrder({
         guest_id: guestId,
         customer_name: name.trim(),
-        address: address.trim(),
+        address: mode === "delivery" ? address.trim() : "",
         phone: phone.trim(),
         notes: notes.trim(),
-        use_points: pointsApplied,
-        items: items.map((l) => ({ product_id: l.product.id, quantity: l.quantity, variant_label: l.variantLabel })),
+        delivery_mode: mode,
+        promo_code: promoCode || null,
+        items: items.map((l) => ({
+          product_id: l.product.id,
+          quantity: l.quantity,
+          variant_label: l.variantLabel,
+        })),
       });
       setSuccess({
         id: order.id,
         total: order.total,
-        points_earned: order.points_earned,
-        points_used: order.points_used,
+        delivery_mode: (order.delivery_mode || mode) as DeliveryMode,
       });
       clear();
-      refreshLoyalty();
     } catch (e: any) {
       setError(e?.message || "Erreur lors de la validation.");
     } finally {
@@ -78,6 +92,7 @@ export default function CheckoutScreen() {
   };
 
   if (success) {
+    const isPickup = success.delivery_mode === "pickup";
     return (
       <SafeAreaView style={styles.successWrap} testID="checkout-success">
         <View style={styles.successIcon}>
@@ -87,15 +102,17 @@ export default function CheckoutScreen() {
         <Text style={styles.successDesc}>
           Votre commande #{success.id.slice(0, 8).toUpperCase()} est en préparation.
         </Text>
+        <View style={styles.successModePill}>
+          <Ionicons
+            name={isPickup ? "storefront" : "bicycle"}
+            size={16}
+            color={colors.onSurface}
+          />
+          <Text style={styles.successModeText}>
+            {isPickup ? "Retrait sur place" : "Livraison à domicile"}
+          </Text>
+        </View>
         <Text style={styles.successTotal}>Total : {formatPrice(success.total)}</Text>
-        {success.points_earned > 0 && (
-          <View style={styles.successLoyalty} testID="checkout-success-loyalty">
-            <Ionicons name="gift" size={18} color={colors.brand} />
-            <Text style={styles.successLoyaltyText}>
-              Vous gagnez {formatPrice(success.points_earned)} en fidélité
-            </Text>
-          </View>
-        )}
         <Pressable
           style={styles.successBtn}
           onPress={() => router.replace(`/order/${success.id}`)}
@@ -135,8 +152,58 @@ export default function CheckoutScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
+          {/* Delivery mode selector */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Informations</Text>
+            <Text style={styles.sectionTitle}>Mode de récupération</Text>
+            <View style={styles.modeRow}>
+              <Pressable
+                style={[styles.modeBtn, mode === "delivery" && styles.modeBtnActive]}
+                onPress={() => setMode("delivery")}
+                testID="checkout-mode-delivery"
+              >
+                <Ionicons
+                  name="bicycle"
+                  size={22}
+                  color={mode === "delivery" ? "#fff" : colors.muted}
+                />
+                <Text style={[styles.modeLabel, mode === "delivery" && styles.modeLabelActive]}>
+                  Livraison
+                </Text>
+                <Text style={[styles.modeSub, mode === "delivery" && styles.modeSubActive]}>
+                  À domicile
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modeBtn, mode === "pickup" && styles.modeBtnActive]}
+                onPress={() => setMode("pickup")}
+                testID="checkout-mode-pickup"
+              >
+                <Ionicons
+                  name="storefront"
+                  size={22}
+                  color={mode === "pickup" ? "#fff" : colors.muted}
+                />
+                <Text style={[styles.modeLabel, mode === "pickup" && styles.modeLabelActive]}>
+                  Sur place
+                </Text>
+                <Text style={[styles.modeSub, mode === "pickup" && styles.modeSubActive]}>
+                  Click &amp; Collect
+                </Text>
+              </Pressable>
+            </View>
+            {mode === "pickup" && (
+              <View style={styles.pickupNote}>
+                <Ionicons name="information-circle" size={18} color={colors.brand} />
+                <Text style={styles.pickupNoteText}>
+                  Vous serez contacté dès que votre commande sera prête à être retirée à la boutique.
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Customer information */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Vos informations</Text>
             <View style={styles.field}>
               <Text style={styles.label}>Nom complet</Text>
               <TextInput
@@ -149,7 +216,9 @@ export default function CheckoutScreen() {
               />
             </View>
             <View style={styles.field}>
-              <Text style={styles.label}>Téléphone (facultatif)</Text>
+              <Text style={styles.label}>
+                Téléphone {mode === "pickup" ? "(recommandé)" : "(facultatif)"}
+              </Text>
               <TextInput
                 value={phone}
                 onChangeText={setPhone}
@@ -160,25 +229,31 @@ export default function CheckoutScreen() {
                 testID="checkout-phone"
               />
             </View>
-            <View style={styles.field}>
-              <Text style={styles.label}>Adresse de livraison</Text>
-              <TextInput
-                value={address}
-                onChangeText={setAddress}
-                placeholder="12 rue de la Paix, 75002 Paris"
-                placeholderTextColor={colors.muted}
-                style={[styles.input, styles.multiline]}
-                multiline
-                numberOfLines={3}
-                testID="checkout-address"
-              />
-            </View>
+            {mode === "delivery" && (
+              <View style={styles.field}>
+                <Text style={styles.label}>Adresse de livraison</Text>
+                <TextInput
+                  value={address}
+                  onChangeText={setAddress}
+                  placeholder="12 rue de la Paix, 75002 Paris"
+                  placeholderTextColor={colors.muted}
+                  style={[styles.input, styles.multiline]}
+                  multiline
+                  numberOfLines={3}
+                  testID="checkout-address"
+                />
+              </View>
+            )}
             <View style={styles.field}>
               <Text style={styles.label}>Notes (facultatif)</Text>
               <TextInput
                 value={notes}
                 onChangeText={setNotes}
-                placeholder="Code interphone, étage…"
+                placeholder={
+                  mode === "delivery"
+                    ? "Code interphone, étage…"
+                    : "Préférence de retrait, remarque…"
+                }
                 placeholderTextColor={colors.muted}
                 style={styles.input}
                 testID="checkout-notes"
@@ -186,10 +261,73 @@ export default function CheckoutScreen() {
             </View>
           </View>
 
+          {/* Promo code */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Code promo</Text>
+            {promoCode ? (
+              <View style={styles.promoApplied} testID="checkout-promo-applied">
+                <View style={styles.promoLeft}>
+                  <View style={styles.promoIconWrap}>
+                    <Ionicons name="pricetag" size={16} color={colors.success} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.promoCode}>{promoCode}</Text>
+                    <Text style={styles.promoDiscount}>
+                      − {formatPrice(discount)} appliqués
+                    </Text>
+                  </View>
+                </View>
+                <Pressable
+                  onPress={clearPromo}
+                  hitSlop={8}
+                  style={styles.promoRemoveBtn}
+                  testID="checkout-promo-remove"
+                >
+                  <Ionicons name="close" size={18} color={colors.muted} />
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.promoRow}>
+                <TextInput
+                  value={promoInput}
+                  onChangeText={(t) => setPromoInput(t.toUpperCase())}
+                  placeholder="SAISIR LE CODE"
+                  placeholderTextColor={colors.muted}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  style={[styles.input, { flex: 1 }]}
+                  onSubmitEditing={submitPromo}
+                  testID="checkout-promo-input"
+                />
+                <Pressable
+                  style={[
+                    styles.promoApplyBtn,
+                    (!promoInput.trim() || promoValidating) && styles.promoApplyBtnDisabled,
+                  ]}
+                  disabled={!promoInput.trim() || promoValidating}
+                  onPress={submitPromo}
+                  testID="checkout-promo-apply"
+                >
+                  {promoValidating ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.promoApplyText}>Appliquer</Text>
+                  )}
+                </Pressable>
+              </View>
+            )}
+            {!!promoError && !promoCode && (
+              <Text style={styles.promoError} testID="checkout-promo-error">
+                {promoError}
+              </Text>
+            )}
+          </View>
+
+          {/* Summary */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Résumé</Text>
             {items.map((l) => (
-              <View key={l.product.id} style={styles.itemRow}>
+              <View key={`${l.product.id}-${l.variantLabel}`} style={styles.itemRow}>
                 <Text style={styles.itemName} numberOfLines={1}>
                   {l.quantity}× {l.product.name} ({l.variantLabel})
                 </Text>
@@ -201,46 +339,38 @@ export default function CheckoutScreen() {
             <View style={styles.divider} />
             <View style={styles.itemRow}>
               <Text style={styles.itemLabel}>Sous-total</Text>
-              <Text style={styles.itemPrice}>{formatPrice(subtotal)}</Text>
+              <Text style={styles.itemPrice} testID="checkout-subtotal">
+                {formatPrice(subtotal)}
+              </Text>
             </View>
-            {availablePoints > 0 && (
-              <Pressable
-                style={[styles.pointsRow, usePoints && styles.pointsRowActive]}
-                onPress={() => setUsePoints((v) => !v)}
-                testID="checkout-use-points"
-              >
-                <View style={styles.pointsLeft}>
-                  <View style={[styles.checkbox, usePoints && styles.checkboxActive]}>
-                    {usePoints && <Ionicons name="checkmark" size={14} color="#fff" />}
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.pointsTitle}>Utiliser ma fidélité</Text>
-                    <Text style={styles.pointsSub}>
-                      {formatPrice(availablePoints)} disponibles
-                    </Text>
-                  </View>
-                </View>
-                {pointsApplied > 0 && (
-                  <Text style={styles.pointsDiscount}>− {formatPrice(pointsApplied)}</Text>
-                )}
-              </Pressable>
+            {discount > 0 && (
+              <View style={styles.itemRow}>
+                <Text style={styles.itemLabel}>
+                  Réduction {promoCode ? `(${promoCode})` : ""}
+                </Text>
+                <Text style={[styles.itemPrice, { color: colors.success }]} testID="checkout-discount">
+                  − {formatPrice(discount)}
+                </Text>
+              </View>
             )}
             <View style={styles.divider} />
             <View style={styles.itemRow}>
               <Text style={styles.totalLabel}>Total</Text>
-              <Text style={styles.totalValue}>{formatPrice(total)}</Text>
+              <Text style={styles.totalValue} testID="checkout-total">
+                {formatPrice(total)}
+              </Text>
             </View>
-            {pointsToEarn > 0 && (
-              <View style={styles.earnRow}>
-                <Ionicons name="gift-outline" size={16} color={colors.brand} />
-                <Text style={styles.earnText}>
-                  Vous gagnerez {formatPrice(pointsToEarn)} en fidélité
-                </Text>
-              </View>
-            )}
             <View style={styles.paymentNote}>
-              <Ionicons name="cash-outline" size={18} color={colors.onSurfaceTertiary} />
-              <Text style={styles.paymentNoteText}>Paiement à la livraison</Text>
+              <Ionicons
+                name={mode === "pickup" ? "wallet-outline" : "cash-outline"}
+                size={18}
+                color={colors.onSurfaceTertiary}
+              />
+              <Text style={styles.paymentNoteText}>
+                {mode === "pickup"
+                  ? "Paiement sur place au moment du retrait"
+                  : "Paiement à la livraison"}
+              </Text>
             </View>
           </View>
 
@@ -261,7 +391,9 @@ export default function CheckoutScreen() {
             {submitting ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.ctaText}>Confirmer la commande</Text>
+              <Text style={styles.ctaText}>
+                {mode === "pickup" ? "Réserver" : "Commander"} · {formatPrice(total)}
+              </Text>
             )}
           </Pressable>
         </View>
@@ -309,6 +441,75 @@ const styles = StyleSheet.create({
     color: colors.onSurface,
   },
   multiline: { minHeight: 80, textAlignVertical: "top" },
+  modeRow: { flexDirection: "row", gap: spacing.md },
+  modeBtn: {
+    flex: 1,
+    backgroundColor: colors.surfaceTertiary,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    alignItems: "center",
+    gap: 4,
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+  modeBtnActive: {
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
+  },
+  modeLabel: { color: colors.onSurface, fontWeight: "700", fontSize: font.base, marginTop: 2 },
+  modeLabelActive: { color: "#fff" },
+  modeSub: { color: colors.muted, fontSize: font.sm },
+  modeSubActive: { color: "rgba(255,255,255,0.85)" },
+  pickupNote: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    backgroundColor: colors.brandSecondary,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    alignItems: "flex-start",
+  },
+  pickupNoteText: { color: colors.onBrandSecondary, fontSize: font.sm, flex: 1, lineHeight: 18 },
+  promoRow: { flexDirection: "row", gap: spacing.sm },
+  promoApplyBtn: {
+    backgroundColor: colors.brand,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 100,
+  },
+  promoApplyBtnDisabled: { opacity: 0.5 },
+  promoApplyText: { color: "#fff", fontWeight: "700" },
+  promoApplied: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#0F2A20",
+    borderRadius: radius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: "#1A4D38",
+  },
+  promoLeft: { flex: 1, flexDirection: "row", alignItems: "center", gap: spacing.md },
+  promoIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#1A4D38",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  promoCode: { color: colors.onSurface, fontWeight: "800", fontSize: font.base, letterSpacing: 0.5 },
+  promoDiscount: { color: "#4ADE80", fontSize: font.sm, fontWeight: "600", marginTop: 2 },
+  promoRemoveBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  promoError: { color: colors.error, fontSize: font.sm, fontWeight: "500" },
   itemRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   itemName: { color: colors.onSurface, fontSize: font.base, flex: 1, marginRight: spacing.md },
   itemPrice: { color: colors.onSurface, fontWeight: "600", fontSize: font.base },
@@ -324,54 +525,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     alignItems: "center",
   },
-  paymentNoteText: { color: colors.onSurfaceTertiary, fontSize: font.sm, fontWeight: "500" },
-  pointsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: colors.brandSecondary,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    borderWidth: 1.5,
-    borderColor: "transparent",
-  },
-  pointsRowActive: { borderColor: colors.brand },
-  pointsLeft: { flexDirection: "row", alignItems: "center", gap: spacing.md, flex: 1 },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 1.5,
-    borderColor: colors.brand,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#fff",
-  },
-  checkboxActive: { backgroundColor: colors.brand },
-  pointsTitle: { color: colors.onSurface, fontWeight: "700", fontSize: font.base },
-  pointsSub: { color: colors.onSurfaceTertiary, fontSize: font.sm, marginTop: 2 },
-  pointsDiscount: { color: colors.brand, fontWeight: "800", fontSize: font.base },
-  earnRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    backgroundColor: colors.brandTertiary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-  },
-  earnText: { color: colors.onBrandTertiary, fontSize: font.sm, fontWeight: "600", flex: 1 },
-  successLoyalty: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    backgroundColor: colors.brandSecondary,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: radius.pill,
-    marginTop: spacing.sm,
-  },
-  successLoyaltyText: { color: colors.onBrandSecondary, fontWeight: "700", fontSize: font.base },
+  paymentNoteText: { color: colors.onSurfaceTertiary, fontSize: font.sm, fontWeight: "500", flex: 1 },
   errorInline: { color: colors.error, fontSize: font.base, fontWeight: "600" },
   ctaBar: {
     position: "absolute",
@@ -413,6 +567,19 @@ const styles = StyleSheet.create({
   },
   successTitle: { fontSize: font.xxl, fontWeight: "800", color: colors.onSurface },
   successDesc: { color: colors.muted, fontSize: font.base, textAlign: "center" },
+  successModePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceSecondary,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: spacing.sm,
+  },
+  successModeText: { color: colors.onSurface, fontWeight: "700", fontSize: font.base },
   successTotal: { color: colors.brand, fontSize: font.xl, fontWeight: "700", marginTop: spacing.sm },
   successBtn: {
     marginTop: spacing.lg,

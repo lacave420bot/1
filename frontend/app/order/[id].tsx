@@ -187,21 +187,42 @@ export default function OrderDetailScreen() {
           </View>
         </View>
 
-        {/* Delivery info */}
+        {/* Delivery / Pickup info */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Livraison</Text>
+          <View style={styles.modeHeader}>
+            <Text style={styles.sectionTitle}>
+              {order.delivery_mode === "pickup" ? "Retrait sur place" : "Livraison"}
+            </Text>
+            <View style={[
+              styles.modePill,
+              order.delivery_mode === "pickup" ? styles.modePillPickup : styles.modePillDelivery,
+            ]}>
+              <Ionicons
+                name={order.delivery_mode === "pickup" ? "storefront" : "bicycle"}
+                size={12}
+                color={colors.onSurface}
+              />
+              <Text style={styles.modePillText}>
+                {order.delivery_mode === "pickup" ? "Click & Collect" : "À domicile"}
+              </Text>
+            </View>
+          </View>
           <View style={styles.infoRow}>
             <Ionicons name="person-outline" size={18} color={colors.muted} />
             <Text style={styles.infoText}>{order.customer_name}</Text>
           </View>
-          <View style={styles.infoRow}>
-            <Ionicons name="call-outline" size={18} color={colors.muted} />
-            <Text style={styles.infoText}>{order.phone}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Ionicons name="location-outline" size={18} color={colors.muted} />
-            <Text style={[styles.infoText, { flex: 1 }]}>{order.address}</Text>
-          </View>
+          {!!order.phone && (
+            <View style={styles.infoRow}>
+              <Ionicons name="call-outline" size={18} color={colors.muted} />
+              <Text style={styles.infoText}>{order.phone}</Text>
+            </View>
+          )}
+          {order.delivery_mode !== "pickup" && !!order.address && (
+            <View style={styles.infoRow}>
+              <Ionicons name="location-outline" size={18} color={colors.muted} />
+              <Text style={[styles.infoText, { flex: 1 }]}>{order.address}</Text>
+            </View>
+          )}
           {order.notes ? (
             <View style={styles.infoRow}>
               <Ionicons name="document-text-outline" size={18} color={colors.muted} />
@@ -235,27 +256,21 @@ export default function OrderDetailScreen() {
             <Text style={styles.sumLabel}>Sous-total</Text>
             <Text style={styles.sumValue}>{formatPrice(order.subtotal)}</Text>
           </View>
-          {order.points_used > 0 && (
+          {order.discount_amount > 0 && (
             <View style={styles.sumRow}>
-              <Text style={styles.sumLabel}>Fidélité utilisée</Text>
-              <Text style={[styles.sumValue, { color: colors.brand }]}>
-                − {formatPrice(order.points_used)}
+              <Text style={styles.sumLabel}>
+                Réduction {order.promo_code ? `(${order.promo_code})` : ""}
+              </Text>
+              <Text style={[styles.sumValue, { color: colors.success }]}>
+                − {formatPrice(order.discount_amount)}
               </Text>
             </View>
           )}
           <View style={styles.divider} />
           <View style={styles.sumRow}>
-            <Text style={styles.totalLabel}>Total payé</Text>
+            <Text style={styles.totalLabel}>Total</Text>
             <Text style={styles.totalValue}>{formatPrice(order.total)}</Text>
           </View>
-          {order.points_earned > 0 && (
-            <View style={styles.earnRow}>
-              <Ionicons name="gift" size={16} color={colors.brand} />
-              <Text style={styles.earnText}>
-                + {formatPrice(order.points_earned)} de fidélité crédités
-              </Text>
-            </View>
-          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -319,6 +334,19 @@ const styles = StyleSheet.create({
     ...shadows.card,
   },
   sectionTitle: { fontSize: font.lg, fontWeight: "700", color: colors.onSurface },
+  modeHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  modePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  modePillDelivery: { backgroundColor: "#11233F", borderColor: "#1F3C66" },
+  modePillPickup: { backgroundColor: "#0F2A20", borderColor: "#1A4D38" },
+  modePillText: { color: colors.onSurface, fontSize: font.sm, fontWeight: "700" },
   timeline: { gap: 0 },
   stepRow: { flexDirection: "row", gap: spacing.md },
   stepIconCol: { alignItems: "center", width: 40 },

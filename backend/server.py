@@ -59,6 +59,52 @@ class WeightVariant(BaseModel):
     price: float
 
 
+class PromoCode(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    code: str  # uppercase, unique
+    kind: str  # "percent" | "amount" | "amount_min"
+    value: float  # percent (1-100) or euro amount
+    min_subtotal: float = 0.0  # only for "amount_min"
+    max_uses: Optional[int] = None  # null = unlimited
+    times_used: int = 0
+    expires_at: Optional[str] = None  # ISO
+    enabled: bool = True
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+def evaluate_promo(promo: dict, subtotal: float) -> tuple[float, Optional[str]]:
+    """Return (discount_amount, error_message). discount_amount = 0 if invalid."""
+    if not promo.get("enabled", True):
+        return 0.0, "Code désactivé."
+    exp = promo.get("expires_at")
+    if exp:
+        try:
+            dt = datetime.fromisoformat(exp)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            if dt < datetime.now(timezone.utc):
+                return 0.0, "Code expiré."
+        except Exception:
+            pass
+    max_uses = promo.get("max_uses")
+    if max_uses is not None and int(promo.get("times_used", 0)) >= int(max_uses):
+        return 0.0, "Code épuisé."
+    kind = promo.get("kind")
+    value = float(promo.get("value", 0))
+    if kind == "percent":
+        d = round(subtotal * (value / 100.0), 2)
+        return min(d, subtotal), None
+    if kind == "amount":
+        return round(min(value, subtotal), 2), None
+    if kind == "amount_min":
+        ms = float(promo.get("min_subtotal", 0))
+        if subtotal < ms:
+            need = round(ms - subtotal, 2)
+            return 0.0, f"Ajoutez {need:.2f} €".replace(".", ",") + f" pour utiliser ce code (min {ms:.0f} €)."
+        return round(min(value, subtotal), 2), None
+    return 0.0, "Type de code inconnu."
+
+
 class Product(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
@@ -96,10 +142,13 @@ class CartItemIn(BaseModel):
 class OrderIn(BaseModel):
     guest_id: str
     customer_name: str
-    address: str
+    address: str = ""
     phone: str = ""
     notes: Optional[str] = ""
+    delivery_mode: str = "delivery"  # "delivery" | "pickup"
     items: List[CartItemIn]
+    promo_code: Optional[str] = None
+    # Kept for backward compat but ignored:
     use_points: float = 0.0
 
 
@@ -119,13 +168,17 @@ class Order(BaseModel):
     address: str
     phone: str
     notes: str = ""
+    delivery_mode: str = "delivery"  # "delivery" | "pickup"
     items: List[OrderItem]
     subtotal: float
     delivery_fee: float = 0.0
+    promo_code: Optional[str] = None
+    discount_amount: float = 0.0
+    # Legacy fields kept so old orders still parse:
     points_used: float = 0.0
     points_earned: float = 0.0
     total: float
-    status: str = "En préparation"
+    status: str = "En cours"
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
@@ -330,6 +383,12 @@ async def create_order(payload: OrderIn):
     if not payload.items:
         raise HTTPException(status_code=400, detail="Le panier est vide")
 
+    delivery_mode = (payload.delivery_mode or "delivery").strip().lower()
+    if delivery_mode not in ("delivery", "pickup"):
+        delivery_mode = "delivery"
+    if delivery_mode == "delivery" and not payload.address.strip():
+        raise HTTPException(status_code=400, detail="Adresse de livraison requise")
+
     product_ids = [i.product_id for i in payload.items]
     products = await db.products.find({"id": {"$in": product_ids}}, {"_id": 0}).to_list(500)
     product_map = {p["id"]: p for p in products}
@@ -340,7 +399,6 @@ async def create_order(payload: OrderIn):
         p = product_map.get(it.product_id)
         if not p:
             raise HTTPException(status_code=400, detail=f"Produit {it.product_id} introuvable")
-        # Resolve variant price
         unit_price = float(p.get("price", 0))
         variant_label = it.variant_label
         if variant_label:
@@ -349,7 +407,6 @@ async def create_order(payload: OrderIn):
                 raise HTTPException(status_code=400, detail=f"Variante '{variant_label}' introuvable pour {p['name']}")
             unit_price = float(v["price"])
         elif p.get("variants"):
-            # No variant specified — fall back to cheapest variant
             v = min(p["variants"], key=lambda x: float(x["price"]))
             unit_price = float(v["price"])
             variant_label = v["label"]
@@ -362,45 +419,37 @@ async def create_order(payload: OrderIn):
             variant_label=variant_label,
         ))
 
-    loyalty_doc = await db.loyalty.find_one({"guest_id": payload.guest_id}, {"_id": 0})
-    current_balance = float(loyalty_doc["points_balance"]) if loyalty_doc else 0.0
-    use_points = max(0.0, min(float(payload.use_points or 0.0), current_balance, subtotal))
-    use_points = round(use_points, 2)
+    # Promo code application
+    promo_code_applied: Optional[str] = None
+    discount = 0.0
+    if payload.promo_code:
+        code = payload.promo_code.strip().upper()
+        promo = await db.promo_codes.find_one({"code": code}, {"_id": 0})
+        if promo:
+            d, err = evaluate_promo(promo, subtotal)
+            if err is None and d > 0:
+                discount = d
+                promo_code_applied = code
+                await db.promo_codes.update_one({"code": code}, {"$inc": {"times_used": 1}})
 
-    discounted_subtotal = max(0.0, subtotal - use_points)
-    total = round(discounted_subtotal, 2)
-    points_earned = round(int(discounted_subtotal // 10) * 1.0, 2)
+    total = round(max(0.0, subtotal - discount), 2)
 
     order = Order(
         guest_id=payload.guest_id,
         customer_name=payload.customer_name,
-        address=payload.address,
+        address=payload.address.strip() if delivery_mode == "delivery" else "",
         phone=payload.phone,
         notes=payload.notes or "",
+        delivery_mode=delivery_mode,
         items=order_items,
         subtotal=round(subtotal, 2),
         delivery_fee=0.0,
-        points_used=use_points,
-        points_earned=points_earned,
+        promo_code=promo_code_applied,
+        discount_amount=round(discount, 2),
         total=total,
     )
     await db.orders.insert_one(order.dict())
 
-    new_balance = round(current_balance - use_points + points_earned, 2)
-    await db.loyalty.update_one(
-        {"guest_id": payload.guest_id},
-        {
-            "$set": {"guest_id": payload.guest_id, "points_balance": new_balance},
-            "$inc": {
-                "total_earned": points_earned,
-                "total_spent": use_points,
-                "orders_count": 1,
-            },
-        },
-        upsert=True,
-    )
-
-    # Fire-and-forget Telegram notification (does not block the response on failure)
     try:
         await send_telegram_order_notification(order)
     except Exception as e:
@@ -455,27 +504,30 @@ def _esc(s) -> str:
 
 
 def _format_order_html(order: Order) -> str:
+    is_pickup = (order.delivery_mode or "delivery") == "pickup"
+    mode_line = "🏪 <b>Retrait sur place</b>" if is_pickup else "🚚 <b>Livraison</b>"
     lines = [
         f"🛒 <b>Nouvelle commande</b> #{_esc(order.id[:8].upper())}",
         f"👤 <b>{_esc(order.customer_name)}</b>" + (f" · {_esc(order.phone)}" if order.phone else ""),
-        f"📍 {_esc(order.address)}",
-        "",
-        "<b>📦 Articles :</b>",
+        mode_line,
     ]
+    if not is_pickup and order.address:
+        lines.append(f"📍 {_esc(order.address)}")
+    lines.append("")
+    lines.append("<b>📦 Articles :</b>")
     for it in order.items:
         variant = f" ({_esc(it.variant_label)})" if it.variant_label else ""
         line_total = it.price * it.quantity
         lines.append(f"  • {it.quantity}× {_esc(it.name)}{variant} — {line_total:.2f} €".replace(".", ","))
     lines.append("")
     lines.append(f"💰 Sous-total : <b>{order.subtotal:.2f} €</b>".replace(".", ","))
-    if order.points_used > 0:
-        lines.append(f"🎁 Fidélité utilisée : −{order.points_used:.2f} €".replace(".", ","))
+    if order.discount_amount > 0:
+        promo = f" ({_esc(order.promo_code)})" if order.promo_code else ""
+        lines.append(f"🎟️ Code promo{promo} : −{order.discount_amount:.2f} €".replace(".", ","))
     lines.append(f"✅ <b>Total : {order.total:.2f} €</b>".replace(".", ","))
     if order.notes:
         lines.append("")
         lines.append(f"📝 <i>Notes :</i> {_esc(order.notes)}")
-    if order.points_earned > 0:
-        lines.append(f"⭐ Gain fidélité client : +{order.points_earned:.2f} €".replace(".", ","))
     try:
         dt = datetime.fromisoformat(order.created_at)
         if dt.tzinfo is None:
@@ -878,6 +930,104 @@ async def admin_test_telegram(_admin: dict = Depends(require_admin)):
         raise
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Erreur réseau : {e}")
+    return {"status": "ok"}
+
+
+# ---------------- Public: promo validation ----------------
+
+class PromoValidateIn(BaseModel):
+    code: str
+    subtotal: float
+
+
+class PromoValidateOut(BaseModel):
+    valid: bool
+    code: Optional[str] = None
+    kind: Optional[str] = None
+    discount: float = 0.0
+    error: Optional[str] = None
+
+
+@api_router.post("/promo/validate", response_model=PromoValidateOut)
+async def promo_validate(payload: PromoValidateIn):
+    code = (payload.code or "").strip().upper()
+    if not code:
+        return PromoValidateOut(valid=False, error="Code vide.")
+    promo = await db.promo_codes.find_one({"code": code}, {"_id": 0})
+    if not promo:
+        return PromoValidateOut(valid=False, error="Code inconnu.")
+    d, err = evaluate_promo(promo, float(payload.subtotal))
+    if err:
+        return PromoValidateOut(valid=False, error=err)
+    return PromoValidateOut(valid=True, code=code, kind=promo.get("kind"), discount=d)
+
+
+# ---------------- Admin: promo codes CRUD ----------------
+
+class PromoCodeIn(BaseModel):
+    code: str
+    kind: str  # "percent" | "amount" | "amount_min"
+    value: float
+    min_subtotal: float = 0.0
+    max_uses: Optional[int] = None
+    expires_at: Optional[str] = None
+    enabled: bool = True
+
+
+class PromoCodePatch(BaseModel):
+    enabled: Optional[bool] = None
+    max_uses: Optional[int] = None
+    expires_at: Optional[str] = None
+    value: Optional[float] = None
+    min_subtotal: Optional[float] = None
+
+
+@api_router.get("/admin/promo-codes", response_model=List[PromoCode])
+async def admin_list_promos(_admin: dict = Depends(require_admin)):
+    items = await db.promo_codes.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return items
+
+
+@api_router.post("/admin/promo-codes", response_model=PromoCode)
+async def admin_create_promo(payload: PromoCodeIn, _admin: dict = Depends(require_admin)):
+    if payload.kind not in ("percent", "amount", "amount_min"):
+        raise HTTPException(status_code=400, detail="Type invalide")
+    code = payload.code.strip().upper()
+    if not code or len(code) < 3:
+        raise HTTPException(status_code=400, detail="Code trop court (3 caractères min)")
+    existing = await db.promo_codes.find_one({"code": code})
+    if existing:
+        raise HTTPException(status_code=400, detail="Ce code existe déjà.")
+    promo = PromoCode(
+        code=code,
+        kind=payload.kind,
+        value=payload.value,
+        min_subtotal=payload.min_subtotal,
+        max_uses=payload.max_uses,
+        expires_at=payload.expires_at,
+        enabled=payload.enabled,
+    )
+    await db.promo_codes.insert_one(promo.dict())
+    return promo
+
+
+@api_router.patch("/admin/promo-codes/{promo_id}", response_model=PromoCode)
+async def admin_update_promo(promo_id: str, payload: PromoCodePatch, _admin: dict = Depends(require_admin)):
+    update = {k: v for k, v in payload.dict(exclude_unset=True).items()}
+    if not update:
+        raise HTTPException(status_code=400, detail="Aucun champ")
+    result = await db.promo_codes.update_one({"id": promo_id}, {"$set": update})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Code introuvable")
+    updated = await db.promo_codes.find_one({"id": promo_id}, {"_id": 0})
+    return updated
+
+
+@api_router.delete("/admin/promo-codes/{promo_id}")
+async def admin_delete_promo(promo_id: str, _admin: dict = Depends(require_admin)):
+    result = await db.promo_codes.delete_one({"id": promo_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Code introuvable")
     return {"status": "ok"}
 
 
