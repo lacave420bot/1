@@ -186,7 +186,7 @@ export default function CheckoutScreen() {
                   color={mode === "pickup" ? "#fff" : colors.muted}
                 />
                 <Text style={[styles.modeLabel, mode === "pickup" && styles.modeLabelActive]}>
-                  Sur place
+                  Sur place 🦁
                 </Text>
                 <Text style={[styles.modeSub, mode === "pickup" && styles.modeSubActive]}>
                   Click &amp; Collect
