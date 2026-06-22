@@ -18,6 +18,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 ORDER_STATUSES = ["En préparation", "En livraison", "Livré"]
+ADMIN_STATUS_CHOICES = ["En préparation", "En livraison", "Livré", "Annulée"]
 
 def compute_status(created_at_iso: str) -> str:
     try:
@@ -35,7 +36,12 @@ def compute_status(created_at_iso: str) -> str:
 
 
 def with_status(order_doc: dict) -> dict:
-    order_doc["status"] = compute_status(order_doc.get("created_at", ""))
+    # If admin manually set a status, use it; otherwise compute from created_at
+    manual = order_doc.get("manual_status")
+    if manual:
+        order_doc["status"] = manual
+    else:
+        order_doc["status"] = compute_status(order_doc.get("created_at", ""))
     return order_doc
 
 # MongoDB connection
@@ -630,6 +636,32 @@ async def admin_delete_category(category_id: str, _admin: dict = Depends(require
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Catégorie introuvable")
     return {"status": "ok"}
+
+
+# ---------------- Admin: Orders ----------------
+
+class OrderStatusUpdate(BaseModel):
+    status: str
+
+
+@api_router.get("/admin/orders", response_model=List[Order])
+async def admin_list_orders(_admin: dict = Depends(require_admin)):
+    items = await db.orders.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return [with_status(o) for o in items]
+
+
+@api_router.patch("/admin/orders/{order_id}", response_model=Order)
+async def admin_update_order(order_id: str, payload: OrderStatusUpdate, _admin: dict = Depends(require_admin)):
+    if payload.status not in ADMIN_STATUS_CHOICES:
+        raise HTTPException(status_code=400, detail=f"Statut invalide. Choix : {', '.join(ADMIN_STATUS_CHOICES)}")
+    result = await db.orders.update_one(
+        {"id": order_id},
+        {"$set": {"manual_status": payload.status}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Commande introuvable")
+    updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    return with_status(updated)
 
 
 app.include_router(api_router)

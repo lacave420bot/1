@@ -28,6 +28,7 @@ export default function AdminIndex() {
   }
 
   const items = [
+    { id: "orders", label: "Commandes", icon: "receipt", bg: "#0F2A20", fg: "#4ADE80", path: "/admin/orders" },
     { id: "products", label: "Produits", icon: "cube", bg: "#11233F", fg: "#7AB1FF", path: "/admin/products" },
     { id: "categories", label: "Catégories", icon: "grid", bg: "#1A1A2E", fg: "#B19CFF", path: "/admin/categories" },
   ] as const;

@@ -159,4 +159,10 @@ export const api = {
     }),
   adminDeleteCategory: (id: string) =>
     request<{ status: string }>(`/admin/categories/${id}`, { method: "DELETE" }),
+  adminListOrders: () => request<Order[]>(`/admin/orders`),
+  adminUpdateOrderStatus: (id: string, status: string) =>
+    request<Order>(`/admin/orders/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
 };
