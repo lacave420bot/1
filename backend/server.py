@@ -147,6 +147,7 @@ class OrderIn(BaseModel):
     customer_name: str
     address: str = ""
     phone: str = ""
+    customer_email: Optional[str] = ""
     notes: Optional[str] = ""
     delivery_mode: str = "delivery"  # "delivery" | "pickup"
     items: List[CartItemIn]
@@ -170,6 +171,7 @@ class Order(BaseModel):
     customer_name: str
     address: str
     phone: str
+    customer_email: str = ""
     notes: str = ""
     delivery_mode: str = "delivery"  # "delivery" | "pickup"
     items: List[OrderItem]
@@ -468,6 +470,7 @@ async def create_order(payload: OrderIn):
         customer_name=payload.customer_name,
         address=payload.address.strip() if delivery_mode == "delivery" else "",
         phone=payload.phone,
+        customer_email=(payload.customer_email or "").strip().lower(),
         notes=payload.notes or "",
         delivery_mode=delivery_mode,
         items=order_items,
@@ -521,6 +524,12 @@ async def create_order(payload: OrderIn):
         except Exception as e:
             logger.warning("[telegram] low-stock alert error: %s", e)
 
+    # Send confirmation email to the customer if email was provided
+    try:
+        await send_status_email(order, "En cours")
+    except Exception as e:
+        logger.warning("[resend] confirmation email error: %s", e)
+
     return order
 
 
@@ -563,6 +572,159 @@ async def _get_telegram_config() -> tuple[str, str]:
         if token and chat_id:
             return token, chat_id
     return TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+
+
+# ----- Resend (transactional email) -----
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
+SHOP_NAME = os.getenv("SHOP_NAME", "La Cave 420").strip()
+EMAIL_FROM = os.getenv("RESEND_FROM", f"{SHOP_NAME} <onboarding@resend.dev>").strip()
+
+
+async def _get_email_config() -> tuple[str, str]:
+    """Read email config from DB, fall back to env."""
+    doc = await db.app_config.find_one({"_id": "email"})
+    if doc:
+        api_key = (doc.get("api_key") or "").strip()
+        sender = (doc.get("from_email") or "").strip()
+        if api_key:
+            return api_key, sender or EMAIL_FROM
+    return RESEND_API_KEY, EMAIL_FROM
+
+
+async def send_email_via_resend(to_email: str, subject: str, html: str) -> bool:
+    api_key, sender = await _get_email_config()
+    if not api_key or not to_email:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client_h:
+            r = await client_h.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "from": sender,
+                    "to": [to_email],
+                    "subject": subject,
+                    "html": html,
+                },
+            )
+            if r.status_code in (200, 202):
+                return True
+            logger.warning("[resend] non-2xx (%s): %s", r.status_code, r.text[:400])
+    except Exception as e:
+        logger.warning("[resend] error: %s", e)
+    return False
+
+
+def _format_items_html(order: Order) -> str:
+    rows = []
+    for it in order.items:
+        variant = f" ({_esc(it.variant_label)})" if it.variant_label else ""
+        line_total = it.price * it.quantity
+        rows.append(
+            f"<tr><td style='padding:6px 0;color:#cbd5e1'>{it.quantity}× {_esc(it.name)}{variant}</td>"
+            f"<td style='padding:6px 0;color:#cbd5e1;text-align:right'>"
+            f"{('%.2f' % line_total).replace('.', ',')} €</td></tr>"
+        )
+    return "\n".join(rows)
+
+
+def _build_email_html(order: Order, title: str, intro: str, accent: str = "#2267EE") -> str:
+    is_pickup = (order.delivery_mode or "delivery") == "pickup"
+    mode_label = "Retrait sur place 🏪" if is_pickup else "Livraison à domicile 🚚"
+    addr_block = ""
+    if not is_pickup and order.address:
+        addr_block = f"""
+        <tr><td style='padding:6px 0;color:#94a3b8'>Adresse</td>
+        <td style='padding:6px 0;color:#fff;text-align:right'>{_esc(order.address)}</td></tr>"""
+    promo_block = ""
+    if order.discount_amount > 0:
+        promo_label = f" ({_esc(order.promo_code)})" if order.promo_code else ""
+        promo_block = f"""
+        <tr><td style='padding:6px 0;color:#94a3b8'>Réduction{promo_label}</td>
+        <td style='padding:6px 0;color:#4ADE80;text-align:right'>− {('%.2f' % order.discount_amount).replace('.', ',')} €</td></tr>"""
+    return f"""<!doctype html>
+<html lang="fr">
+<body style="margin:0;padding:0;background:#0B1018;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#fff">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0B1018;padding:32px 12px">
+    <tr><td align="center">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="background:#111827;border-radius:16px;overflow:hidden">
+        <tr><td style="padding:32px 32px 16px">
+          <div style="display:inline-block;padding:6px 14px;background:rgba(34,103,238,0.18);color:{accent};border-radius:999px;font-weight:700;font-size:12px;letter-spacing:1px;text-transform:uppercase">{_esc(SHOP_NAME)}</div>
+          <h1 style="margin:18px 0 6px;font-size:24px;font-weight:800;color:#fff">{_esc(title)}</h1>
+          <p style="margin:0;color:#94a3b8;font-size:15px;line-height:22px">{_esc(intro)}</p>
+        </td></tr>
+        <tr><td style="padding:8px 32px 0">
+          <div style="background:#0F172A;border:1px solid #1F2937;border-radius:12px;padding:18px">
+            <div style="font-size:12px;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;margin-bottom:8px">Commande #{_esc(order.id[:8].upper())}</div>
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:14px">
+              <tr><td style='padding:6px 0;color:#94a3b8'>Mode</td>
+              <td style='padding:6px 0;color:#fff;text-align:right'>{mode_label}</td></tr>
+              {addr_block}
+              <tr><td colspan="2" style="border-top:1px solid #1F2937;padding-top:10px"></td></tr>
+              {_format_items_html(order)}
+              <tr><td colspan="2" style="border-top:1px solid #1F2937;padding-top:10px"></td></tr>
+              <tr><td style='padding:6px 0;color:#94a3b8'>Sous-total</td>
+              <td style='padding:6px 0;color:#fff;text-align:right'>{('%.2f' % order.subtotal).replace('.', ',')} €</td></tr>
+              {promo_block}
+              <tr><td style='padding:10px 0 0;color:#fff;font-weight:700;font-size:16px'>Total</td>
+              <td style='padding:10px 0 0;color:{accent};text-align:right;font-weight:800;font-size:18px'>{('%.2f' % order.total).replace('.', ',')} €</td></tr>
+            </table>
+          </div>
+        </td></tr>
+        <tr><td style="padding:24px 32px 32px;color:#64748b;font-size:13px;line-height:20px">
+          Merci pour votre confiance !<br>
+          L'équipe {_esc(SHOP_NAME)} 🌿
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"""
+
+
+def email_for_status(order: Order, order_status: str) -> tuple[str, str, str, str] | None:
+    """Return (subject, title, intro, accent) for a given status, or None if no email should be sent."""
+    if order_status == "En cours":
+        return (
+            f"Commande confirmée — {SHOP_NAME}",
+            "Commande reçue 🎉",
+            "Nous avons bien reçu votre commande et nous la préparons. Vous serez notifié dès qu'elle sera prête.",
+            "#7AB1FF",
+        )
+    if order_status == "Terminée":
+        is_pickup = (order.delivery_mode or "delivery") == "pickup"
+        return (
+            f"Votre commande est prête — {SHOP_NAME}",
+            "C'est prêt ! ✨",
+            (
+                "Votre commande est prête à être retirée à la boutique."
+                if is_pickup
+                else "Votre commande a été livrée. Bonne dégustation !"
+            ),
+            "#4ADE80",
+        )
+    if order_status == "Annulée":
+        return (
+            f"Commande annulée — {SHOP_NAME}",
+            "Commande annulée",
+            "Votre commande a été annulée. Si vous avez la moindre question, contactez-nous directement en boutique.",
+            "#FCA5A5",
+        )
+    return None
+
+
+async def send_status_email(order: Order, order_status: str) -> None:
+    if not order.customer_email:
+        return
+    payload = email_for_status(order, order_status)
+    if not payload:
+        return
+    subject, title, intro, accent = payload
+    html = _build_email_html(order, title, intro, accent)
+    await send_email_via_resend(order.customer_email, subject, html)
 
 
 def _esc(s) -> str:
@@ -975,7 +1137,16 @@ async def admin_update_order(order_id: str, payload: OrderStatusUpdate, _admin: 
         await _decrement_order_items(before_doc.get("items") or [])
 
     updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
-    return with_status(updated)
+    updated_order = with_status(updated)
+
+    # Send a status-change email if status actually changed
+    if new_status != prev_status:
+        try:
+            await send_status_email(Order(**updated_order), new_status)
+        except Exception as e:
+            logger.warning("[resend] status email error: %s", e)
+
+    return updated_order
 
 
 async def _restock_order_items(items: list) -> None:
