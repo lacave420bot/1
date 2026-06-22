@@ -888,7 +888,7 @@ def email_for_status(order: Order, order_status: str) -> tuple[str, str, str, st
     if order_status == "Commande au point de livraison":
         return (
             f"Votre commande est en route — {SHOP_NAME}",
-            "C'est prêt ! ✨",
+            "C'est livré ! ✨",
             "Votre commande a été livrée. Bonne dégustation !",
             "#4ADE80",
         )
