@@ -970,7 +970,7 @@ async def send_telegram_order_notification(order: Order) -> None:
         "text": _format_order_html(order),
         "parse_mode": "HTML",
         "disable_web_page_preview": True,
-        "reply_markup": _order_action_keyboard(order.id, order.status or "En cours"),
+        "reply_markup": _order_action_keyboard(order.id, order.status or "En cours", order.delivery_mode or "delivery"),
     }
     try:
         async with httpx.AsyncClient(timeout=8.0) as client_h:
@@ -993,25 +993,30 @@ async def send_telegram_order_notification(order: Order) -> None:
         logger.warning("[telegram] error: %s", e)
 
 
-def _order_action_keyboard(order_id: str, current_status: str) -> dict:
+def _order_action_keyboard(order_id: str, current_status: str, delivery_mode: str = "delivery") -> dict:
     """Build the inline keyboard shown under each order notification.
 
     Uses the new 5-status workflow. Telegram's `callback_data` is limited to
     64 bytes, so we use compact codes (`s:{order_id}:{code}`) where code is
     a single character from STATUS_CODE_TO_LABEL.
+    Filters the "ready" / "out for delivery" buttons based on delivery_mode:
+      - pickup orders never show "Commande au point de livraison"
+      - delivery orders never show "Commande prête (sur place)"
     Buttons are split into rows of 2.
     """
     cur = current_status or "En cours"
     is_cancelled = cur == "Annulée"
+    is_pickup = (delivery_mode or "delivery") == "pickup"
 
     candidates: list[tuple[str, str, str]] = []  # (label, full_status, code)
     if cur != "En cours":
         candidates.append(("🔄 En cours", "En cours", "0"))
     if cur != "En préparation":
         candidates.append(("👨‍🍳 En préparation", "En préparation", "1"))
-    if cur != "Commande prête":
+    # Show only the relevant "final" button based on the order's delivery mode
+    if is_pickup and cur != "Commande prête":
         candidates.append(("✅ Prête (sur place)", "Commande prête", "2"))
-    if cur != "Commande au point de livraison":
+    if not is_pickup and cur != "Commande au point de livraison":
         candidates.append(("🚚 Au point de livraison", "Commande au point de livraison", "3"))
     if not is_cancelled:
         candidates.append(("❌ Annuler", "Annulée", "4"))
@@ -1071,7 +1076,7 @@ async def _telegram_edit_order_message(order: Order) -> None:
                     "text": new_text,
                     "parse_mode": "HTML",
                     "disable_web_page_preview": True,
-                    "reply_markup": _order_action_keyboard(order.id, cur),
+                    "reply_markup": _order_action_keyboard(order.id, cur, order.delivery_mode or "delivery"),
                 },
             )
     except Exception as e:

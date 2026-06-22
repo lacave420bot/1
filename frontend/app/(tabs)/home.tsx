@@ -253,22 +253,6 @@ export default function HomeScreen() {
           ))}
         </Animated.View>
 
-        {/* Compliance card */}
-        <Animated.View
-          entering={FadeIn.duration(500).delay(450)}
-          style={styles.complianceCard}
-        >
-          <View style={styles.complianceIcon}>
-            <Ionicons name="shield-checkmark" size={18} color="#4ADE80" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.complianceTitle}>Produits conformes</Text>
-            <Text style={styles.complianceSub}>
-              THC &lt; 0,3 % · Réservé aux 18 ans et +
-            </Text>
-          </View>
-        </Animated.View>
-
         {/* Categories */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Catégories</Text>
