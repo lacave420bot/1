@@ -233,7 +233,15 @@ export default function AdminOrdersScreen() {
             <Ionicons name="close" size={22} color={colors.onSurface} />
           </Pressable>
         ) : (
-          <Pressable style={styles.backBtn} onPress={() => router.back()} hitSlop={8}>
+          <Pressable
+            style={styles.backBtn}
+            onPress={() => {
+              if (router.canGoBack()) router.back();
+              else router.replace("/(tabs)/home");
+            }}
+            hitSlop={8}
+            testID="admin-orders-back"
+          >
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
           </Pressable>
         )}
