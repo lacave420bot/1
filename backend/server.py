@@ -917,8 +917,8 @@ def _esc(s) -> str:
 
 def _estimated_window_label(delivery_mode: str) -> str:
     if (delivery_mode or "delivery") == "pickup":
-        return "Retrait estimé sous 20 à 35 min"
-    return "Prise en charge estimée sous 35 à 55 min"
+        return "Retrait estimé sous 20 à 35 min."
+    return "Prise en charge estimée sous 35 à 55 min."
 
 
 def _format_order_html(order: Order) -> str:
