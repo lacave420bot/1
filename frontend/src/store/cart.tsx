@@ -41,6 +41,7 @@ type CartContextValue = {
   addItem: (product: Product, variantLabel: string, unitPrice: number, qty?: number) => void;
   setQuantity: (lineKey: string, qty: number) => void;
   removeItem: (lineKey: string) => void;
+  updateLine: (lineKey: string, partial: { product?: Product; unitPrice?: number }) => void;
   clear: () => void;
   ready: boolean;
 };
@@ -139,6 +140,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setItems((prev) => prev.filter((l) => lineKey(l.product.id, l.variantLabel) !== key));
   }, []);
 
+  const updateLine = useCallback(
+    (key: string, partial: { product?: Product; unitPrice?: number }) => {
+      setItems((prev) =>
+        prev.map((l) => {
+          if (lineKey(l.product.id, l.variantLabel) !== key) return l;
+          return {
+            ...l,
+            ...(partial.product ? { product: partial.product } : {}),
+            ...(partial.unitPrice !== undefined ? { unitPrice: partial.unitPrice } : {}),
+          };
+        }),
+      );
+    },
+    [],
+  );
+
   const clear = useCallback(() => {
     setItems([]);
     setPromo(null);
@@ -232,13 +249,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       addItem,
       setQuantity,
       removeItem,
+      updateLine,
       clear,
       ready,
     }),
     [
       items, guestId, count, subtotal, discount, total,
       promo, promoError, promoValidating, applyPromo, clearPromo,
-      addItem, setQuantity, removeItem, clear, ready,
+      addItem, setQuantity, removeItem, updateLine, clear, ready,
     ],
   );
 
