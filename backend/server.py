@@ -878,16 +878,18 @@ def email_for_status(order: Order, order_status: str) -> tuple[str, str, str, st
             "Nous avons bien reçu votre commande et nous la préparons. Vous serez notifié dès qu'elle sera prête.",
             "#7AB1FF",
         )
-    if order_status == "Terminée":
-        is_pickup = (order.delivery_mode or "delivery") == "pickup"
+    if order_status == "Commande prête":
         return (
             f"Votre commande est prête — {SHOP_NAME}",
             "C'est prêt ! ✨",
-            (
-                "Votre commande est prête à être retirée à la boutique."
-                if is_pickup
-                else "Votre commande a été livrée. Bonne dégustation !"
-            ),
+            "Votre commande est prête à être retirée à la boutique.",
+            "#4ADE80",
+        )
+    if order_status == "Commande au point de livraison":
+        return (
+            f"Votre commande est en route — {SHOP_NAME}",
+            "C'est prêt ! ✨",
+            "Votre commande a été livrée. Bonne dégustation !",
             "#4ADE80",
         )
     if order_status == "Annulée":
@@ -1091,24 +1093,22 @@ async def send_customer_status_dm(order: Order) -> None:
         return
 
     order_status = order.status or ""
-    is_pickup = (order.delivery_mode or "delivery") == "pickup"
     short_id = order.id[:8].upper()
     first_name = (user.get("name") or order.customer_name or "").strip().split(" ")[0]
     greet = f"Bonjour {_esc(first_name)} ! " if first_name else ""
 
-    if order_status == "Terminée":
-        if is_pickup:
-            title = "🦁 Votre commande est prête !"
-            body = (
-                f"{greet}Votre commande <b>#{short_id}</b> est <b>prête</b> à être retirée "
-                f"à la boutique.\n\nÀ tout de suite ! 🌿"
-            )
-        else:
-            title = "✅ Commande livrée"
-            body = (
-                f"{greet}Votre commande <b>#{short_id}</b> a été <b>livrée</b>. "
-                f"Bonne dégustation 🌿\n\nMerci pour votre confiance !"
-            )
+    if order_status == "Commande prête":
+        title = "🦁 Votre commande est prête !"
+        body = (
+            f"{greet}Votre commande <b>#{short_id}</b> est <b>prête</b> à être retirée "
+            f"à la boutique.\n\nÀ tout de suite ! 🌿"
+        )
+    elif order_status == "Commande au point de livraison":
+        title = "✅ Commande livrée"
+        body = (
+            f"{greet}Votre commande <b>#{short_id}</b> a été <b>livrée</b>. "
+            f"Bonne dégustation 🌿\n\nMerci pour votre confiance !"
+        )
     elif order_status == "Annulée":
         title = "❌ Commande annulée"
         body = (
