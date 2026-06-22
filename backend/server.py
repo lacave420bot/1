@@ -2344,6 +2344,306 @@ async def admin_delete_promo(promo_id: str, _admin: dict = Depends(require_admin
     return {"status": "ok"}
 
 
+# ============================ Shop hours & closures ============================
+
+DAYS_OF_WEEK = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+DAY_LABELS_FR = {
+    "monday": "Lundi",
+    "tuesday": "Mardi",
+    "wednesday": "Mercredi",
+    "thursday": "Jeudi",
+    "friday": "Vendredi",
+    "saturday": "Samedi",
+    "sunday": "Dimanche",
+}
+
+
+class DayHours(BaseModel):
+    open: Optional[str] = None   # "10:00" or null → closed all day
+    close: Optional[str] = None  # "19:00" or null → closed all day
+
+
+class OpeningHours(BaseModel):
+    monday:    DayHours = Field(default_factory=DayHours)
+    tuesday:   DayHours = Field(default_factory=DayHours)
+    wednesday: DayHours = Field(default_factory=DayHours)
+    thursday:  DayHours = Field(default_factory=DayHours)
+    friday:    DayHours = Field(default_factory=DayHours)
+    saturday:  DayHours = Field(default_factory=DayHours)
+    sunday:    DayHours = Field(default_factory=DayHours)
+
+
+class ShopClosure(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    start_date: str   # "YYYY-MM-DD"
+    end_date: str     # "YYYY-MM-DD" (inclusive)
+    reason: str = ""
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+# Default opening hours (Mon-Sat 10:00-19:00, closed Sunday)
+DEFAULT_HOURS = OpeningHours(
+    monday=DayHours(open="10:00", close="19:00"),
+    tuesday=DayHours(open="10:00", close="19:00"),
+    wednesday=DayHours(open="10:00", close="19:00"),
+    thursday=DayHours(open="10:00", close="19:00"),
+    friday=DayHours(open="10:00", close="19:00"),
+    saturday=DayHours(open="10:00", close="19:00"),
+    sunday=DayHours(),  # Closed
+)
+
+
+def _validate_hhmm(value: Optional[str]) -> Optional[str]:
+    if value is None or value == "":
+        return None
+    cleaned = value.strip()
+    if not re.fullmatch(r"^([01]\d|2[0-3]):[0-5]\d$", cleaned):
+        raise HTTPException(status_code=400, detail=f"Format heure invalide : '{value}'. Utilisez HH:MM.")
+    return cleaned
+
+
+def _validate_date(value: str, field: str = "date") -> str:
+    cleaned = (value or "").strip()
+    if not re.fullmatch(r"^\d{4}-\d{2}-\d{2}$", cleaned):
+        raise HTTPException(status_code=400, detail=f"{field} invalide. Format attendu YYYY-MM-DD.")
+    try:
+        datetime.strptime(cleaned, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"{field} n'est pas une date valide.")
+    return cleaned
+
+
+async def _get_shop_hours_doc() -> dict:
+    doc = await db.app_config.find_one({"_id": "shop_hours"}, {"_id": 0}) or {}
+    hours = doc.get("hours") or DEFAULT_HOURS.model_dump()
+    closures = doc.get("closures") or []
+    closed_today_date = doc.get("closed_today_date")
+    return {"hours": hours, "closures": closures, "closed_today_date": closed_today_date}
+
+
+def _compute_open_status(hours: dict, closures: list, closed_today_date: Optional[str]) -> dict:
+    """Compute whether the shop is currently open, with a short reason."""
+    now = datetime.now()
+    today_iso = now.strftime("%Y-%m-%d")
+    weekday_name = DAYS_OF_WEEK[now.weekday()]
+
+    # 1. "Closed today" toggle takes precedence
+    if closed_today_date == today_iso:
+        return {"is_open": False, "reason": "Fermé exceptionnellement aujourd'hui", "today_label": DAY_LABELS_FR.get(weekday_name, "")}
+
+    # 2. Active closure period?
+    for c in closures or []:
+        start = c.get("start_date") or ""
+        end = c.get("end_date") or ""
+        if start and end and start <= today_iso <= end:
+            base_reason = c.get("reason") or "Fermeture exceptionnelle"
+            return {
+                "is_open": False,
+                "reason": f"{base_reason} (du {start} au {end})",
+                "today_label": DAY_LABELS_FR.get(weekday_name, ""),
+            }
+
+    # 3. Regular hours for today
+    today_hours = (hours or {}).get(weekday_name) or {}
+    open_str = today_hours.get("open")
+    close_str = today_hours.get("close")
+    if not open_str or not close_str:
+        return {"is_open": False, "reason": "Fermé aujourd'hui", "today_label": DAY_LABELS_FR.get(weekday_name, "")}
+
+    cur_min = now.hour * 60 + now.minute
+    try:
+        oh, om = map(int, open_str.split(":"))
+        ch, cm = map(int, close_str.split(":"))
+    except Exception:
+        return {"is_open": False, "reason": "Horaires non configurés", "today_label": DAY_LABELS_FR.get(weekday_name, "")}
+    open_min = oh * 60 + om
+    close_min = ch * 60 + cm
+
+    if open_min <= cur_min < close_min:
+        return {
+            "is_open": True,
+            "reason": f"Ouvert jusqu'à {close_str}",
+            "today_label": DAY_LABELS_FR.get(weekday_name, ""),
+            "open": open_str,
+            "close": close_str,
+        }
+    if cur_min < open_min:
+        return {
+            "is_open": False,
+            "reason": f"Ouvre à {open_str}",
+            "today_label": DAY_LABELS_FR.get(weekday_name, ""),
+            "open": open_str,
+            "close": close_str,
+        }
+    return {
+        "is_open": False,
+        "reason": f"Fermé depuis {close_str}",
+        "today_label": DAY_LABELS_FR.get(weekday_name, ""),
+        "open": open_str,
+        "close": close_str,
+    }
+
+
+@api_router.get("/shop/hours")
+async def get_shop_hours():
+    """Public endpoint: full opening hours, closures, and current open status."""
+    doc = await _get_shop_hours_doc()
+    open_status = _compute_open_status(doc["hours"], doc["closures"], doc.get("closed_today_date"))
+    return {
+        "hours": doc["hours"],
+        "closures": doc["closures"],
+        "closed_today": doc.get("closed_today_date") == datetime.now().strftime("%Y-%m-%d"),
+        "status": open_status,
+    }
+
+
+class ShopHoursUpdate(BaseModel):
+    hours: OpeningHours
+
+
+@api_router.put("/admin/shop/hours")
+async def admin_update_shop_hours(payload: ShopHoursUpdate, _admin: dict = Depends(require_admin)):
+    # Validate each day's open/close pair
+    h = payload.hours.model_dump()
+    for day, day_hours in h.items():
+        open_v = _validate_hhmm(day_hours.get("open"))
+        close_v = _validate_hhmm(day_hours.get("close"))
+        if (open_v is None) != (close_v is None):
+            raise HTTPException(
+                status_code=400,
+                detail=f"{DAY_LABELS_FR.get(day, day)} : ouverture et fermeture doivent être définies ensemble.",
+            )
+        if open_v and close_v and open_v >= close_v:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{DAY_LABELS_FR.get(day, day)} : l'heure de fermeture doit être après l'ouverture.",
+            )
+        h[day] = {"open": open_v, "close": close_v}
+
+    await db.app_config.update_one(
+        {"_id": "shop_hours"},
+        {"$set": {"hours": h}},
+        upsert=True,
+    )
+    return {"status": "ok", "hours": h}
+
+
+class ShopClosureIn(BaseModel):
+    start_date: str
+    end_date: str
+    reason: str = ""
+
+
+@api_router.post("/admin/shop/closures", response_model=ShopClosure)
+async def admin_add_closure(payload: ShopClosureIn, _admin: dict = Depends(require_admin)):
+    start = _validate_date(payload.start_date, "start_date")
+    end = _validate_date(payload.end_date, "end_date")
+    if end < start:
+        raise HTTPException(status_code=400, detail="La date de fin doit être après la date de début.")
+    closure = ShopClosure(start_date=start, end_date=end, reason=payload.reason.strip())
+    await db.app_config.update_one(
+        {"_id": "shop_hours"},
+        {"$push": {"closures": closure.model_dump()}},
+        upsert=True,
+    )
+    return closure
+
+
+@api_router.delete("/admin/shop/closures/{closure_id}")
+async def admin_delete_closure(closure_id: str, _admin: dict = Depends(require_admin)):
+    result = await db.app_config.update_one(
+        {"_id": "shop_hours"},
+        {"$pull": {"closures": {"id": closure_id}}},
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Fermeture introuvable")
+    return {"status": "ok"}
+
+
+class ClosedTodayUpdate(BaseModel):
+    closed: bool
+
+
+@api_router.post("/admin/shop/closed-today")
+async def admin_toggle_closed_today(payload: ClosedTodayUpdate, _admin: dict = Depends(require_admin)):
+    today_iso = datetime.now().strftime("%Y-%m-%d") if payload.closed else None
+    await db.app_config.update_one(
+        {"_id": "shop_hours"},
+        {"$set": {"closed_today_date": today_iso}},
+        upsert=True,
+    )
+    return {"status": "ok", "closed_today": payload.closed}
+
+
+# ============================ Admin Analytics ============================
+
+@api_router.get("/admin/analytics")
+async def admin_analytics(_admin: dict = Depends(require_admin)):
+    """Aggregated KPIs for the admin dashboard:
+    - revenue today / this week (excludes cancelled orders)
+    - pending orders count (En cours + En préparation)
+    - out-of-stock products count
+    - low-stock variants count
+    """
+    now = datetime.now(timezone.utc)
+    start_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    weekday = start_today.weekday()  # Monday = 0
+    start_week = start_today - timedelta(days=weekday)
+
+    # Fetch all orders (small dataset for this MVP — could be optimized via aggregation later)
+    orders = await db.orders.find({}, {"_id": 0}).to_list(5000)
+    revenue_today = 0.0
+    revenue_week = 0.0
+    pending = 0
+    for o in orders:
+        oo = with_status(dict(o))
+        st = oo.get("status") or ""
+        try:
+            created = datetime.fromisoformat(oo.get("created_at") or "")
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+        except Exception:
+            continue
+        if st != "Annulée":
+            if created >= start_today:
+                revenue_today += float(oo.get("total") or 0)
+            if created >= start_week:
+                revenue_week += float(oo.get("total") or 0)
+        if st in ("En cours", "En préparation"):
+            pending += 1
+
+    # Out-of-stock / low-stock from products
+    products = await db.products.find({}, {"_id": 0}).to_list(2000)
+    out_of_stock = 0
+    low_stock = 0
+    for p in products:
+        total_g = p.get("total_stock_grams")
+        if total_g is not None:
+            threshold = p.get("low_stock_threshold_grams") or DEFAULT_LOW_STOCK_THRESHOLD
+            if total_g <= 0:
+                out_of_stock += 1
+            elif total_g <= threshold:
+                low_stock += 1
+        else:
+            # Fall back to per-variant stock
+            for v in (p.get("variants") or []):
+                s = v.get("stock")
+                if s is None:
+                    continue
+                if s <= 0:
+                    out_of_stock += 1
+                elif s <= (p.get("low_stock_threshold") or DEFAULT_LOW_STOCK_THRESHOLD):
+                    low_stock += 1
+
+    return {
+        "revenue_today": round(revenue_today, 2),
+        "revenue_week": round(revenue_week, 2),
+        "pending_orders": pending,
+        "out_of_stock_products": out_of_stock,
+        "low_stock_variants": low_stock,
+    }
+
+
 app.include_router(api_router)
 
 app.add_middleware(

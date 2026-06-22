@@ -20,7 +20,7 @@ import Animated, {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@/src/components/AnimatedPressable";
-import { api, type Category, type Order, type Product, minVariantPrice } from "@/src/api";
+import { api, type Category, type Order, type Product, type ShopHoursResponse, minVariantPrice } from "@/src/api";
 import { useCart, formatPrice } from "@/src/store/cart";
 import { useAdmin } from "@/src/store/admin";
 import { useLoyalty } from "@/src/store/loyalty";
@@ -59,6 +59,7 @@ export default function HomeScreen() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [popular, setPopular] = useState<Product[]>([]);
   const [recentOrders, setRecentOrders] = useState<Order[]>([]);
+  const [shopStatus, setShopStatus] = useState<ShopHoursResponse["status"] | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,12 +67,14 @@ export default function HomeScreen() {
   const load = useCallback(async () => {
     try {
       setError(null);
-      const [cats, pop] = await Promise.all([
+      const [cats, pop, shop] = await Promise.all([
         api.getCategories(),
         api.getProducts({ popular: true }),
+        api.getShopHours().catch(() => null),
       ]);
       setCategories(cats);
       setPopular(pop);
+      if (shop) setShopStatus(shop.status);
       // Only load orders list for the admin (PIN-authenticated)
       if (isAdmin) {
         try {
@@ -170,8 +173,23 @@ export default function HomeScreen() {
     <View style={styles.root} testID="home-screen">
       <SafeAreaView edges={["top"]} style={{ backgroundColor: colors.surface }}>
         <View style={styles.topBar}>
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, gap: 4 }}>
             <Text style={styles.topBrand}>La Cave 420 🫶🏽</Text>
+            {shopStatus && (
+              <Pressable
+                onPress={() => router.push("/shop-hours")}
+                style={[
+                  styles.shopStatusPill,
+                  shopStatus.is_open ? styles.shopStatusOpen : styles.shopStatusClosed,
+                ]}
+                testID="home-shop-status"
+              >
+                <View style={[styles.statusDot, { backgroundColor: shopStatus.is_open ? "#4ADE80" : "#FCA5A5" }]} />
+                <Text style={[styles.shopStatusText, { color: shopStatus.is_open ? "#86EFAC" : "#FCA5A5" }]} numberOfLines={1}>
+                  {shopStatus.is_open ? `Ouvert · ${shopStatus.reason}` : shopStatus.reason}
+                </Text>
+              </Pressable>
+            )}
           </View>
           <Pressable
             style={styles.iconBtn}
@@ -441,6 +459,21 @@ const styles = StyleSheet.create({
   },
   avatarText: { color: "#fff", fontSize: font.lg, fontWeight: "800" },
   topBrand: { color: colors.onSurface, fontSize: font.xl, fontWeight: "800" },
+  shopStatusPill: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    maxWidth: 240,
+  },
+  shopStatusOpen: { backgroundColor: "rgba(74,222,128,0.08)", borderColor: "rgba(74,222,128,0.30)" },
+  shopStatusClosed: { backgroundColor: "rgba(252,165,165,0.08)", borderColor: "rgba(252,165,165,0.30)" },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  shopStatusText: { fontSize: font.xs, fontWeight: "700" },
   iconBtn: {
     width: 40,
     height: 40,

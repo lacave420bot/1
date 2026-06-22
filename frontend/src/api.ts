@@ -315,4 +315,64 @@ export const api = {
     }),
   adminDeletePromo: (id: string) =>
     request<{ status: string }>(`/admin/promo-codes/${id}`, { method: "DELETE" }),
+
+  // ---- Shop hours & closures ----
+  getShopHours: () => request<ShopHoursResponse>(`/shop/hours`),
+  adminUpdateShopHours: (hours: WeeklyHours) =>
+    request<{ status: string; hours: WeeklyHours }>(`/admin/shop/hours`, {
+      method: "PUT",
+      body: JSON.stringify({ hours }),
+    }),
+  adminAddShopClosure: (start_date: string, end_date: string, reason: string) =>
+    request<ShopClosure>(`/admin/shop/closures`, {
+      method: "POST",
+      body: JSON.stringify({ start_date, end_date, reason }),
+    }),
+  adminDeleteShopClosure: (id: string) =>
+    request<{ status: string }>(`/admin/shop/closures/${id}`, { method: "DELETE" }),
+  adminSetClosedToday: (closed: boolean) =>
+    request<{ status: string; closed_today: boolean }>(`/admin/shop/closed-today`, {
+      method: "POST",
+      body: JSON.stringify({ closed }),
+    }),
+
+  // ---- Admin analytics ----
+  adminAnalytics: () => request<AdminAnalytics>(`/admin/analytics`),
+};
+
+export type DayHours = { open: string | null; close: string | null };
+export type WeeklyHours = {
+  monday: DayHours;
+  tuesday: DayHours;
+  wednesday: DayHours;
+  thursday: DayHours;
+  friday: DayHours;
+  saturday: DayHours;
+  sunday: DayHours;
+};
+export type ShopClosure = {
+  id: string;
+  start_date: string;
+  end_date: string;
+  reason: string;
+  created_at?: string;
+};
+export type ShopHoursResponse = {
+  hours: WeeklyHours;
+  closures: ShopClosure[];
+  closed_today: boolean;
+  status: {
+    is_open: boolean;
+    reason: string;
+    today_label: string;
+    open?: string;
+    close?: string;
+  };
+};
+export type AdminAnalytics = {
+  revenue_today: number;
+  revenue_week: number;
+  pending_orders: number;
+  out_of_stock_products: number;
+  low_stock_variants: number;
 };
