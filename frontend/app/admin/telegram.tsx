@@ -20,6 +20,41 @@ import { colors, font, radius, shadows, spacing } from "@/src/theme";
 
 type Chat = { id: string; type?: string; title?: string };
 
+function ManualChatIdInput({
+  picker,
+  currentValue,
+  onSubmit,
+}: {
+  picker: "orders" | "alerts";
+  currentValue: string;
+  onSubmit: (v: string) => void;
+}) {
+  const [val, setVal] = useState("");
+  return (
+    <View style={{ flexDirection: "row", gap: spacing.sm, alignItems: "center" }}>
+      <TextInput
+        value={val}
+        onChangeText={setVal}
+        placeholder={picker === "orders" ? "ex : -100123456789" : "ex : -100987654321"}
+        placeholderTextColor={colors.muted}
+        keyboardType="default"
+        autoCapitalize="none"
+        autoCorrect={false}
+        style={[styles.input, { flex: 1 }]}
+        testID="tg-manual-chatid"
+      />
+      <Pressable
+        style={[styles.smallBtn, (!val.trim() || val.trim() === currentValue) && { opacity: 0.5 }]}
+        disabled={!val.trim() || val.trim() === currentValue}
+        onPress={() => { onSubmit(val.trim()); setVal(""); }}
+        testID="tg-manual-chatid-save"
+      >
+        <Text style={styles.smallBtnText}>OK</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export default function AdminTelegramScreen() {
   const router = useRouter();
   const { isAuthenticated, ready: adminReady } = useAdmin();
@@ -215,10 +250,67 @@ export default function AdminTelegramScreen() {
           <View style={styles.section}>
             <View style={styles.stepHeader}>
               <View style={styles.stepNum}><Text style={styles.stepNumText}>2</Text></View>
-              <Text style={styles.sectionTitle}>Choisir le chat</Text>
+              <Text style={styles.sectionTitle}>Choisir le(s) chat(s)</Text>
+            </View>
+
+            {/* Tabs always visible — explains which chat goes where */}
+            <View style={styles.pickerTabs}>
+              <Pressable
+                style={[styles.pickerTab, chatPicker === "orders" && styles.pickerTabActive]}
+                onPress={() => setChatPicker("orders")}
+                testID="tg-picker-orders"
+              >
+                <Ionicons name="cart" size={14} color={chatPicker === "orders" ? "#fff" : colors.muted} />
+                <Text style={[styles.pickerTabText, chatPicker === "orders" && { color: "#fff" }]}>
+                  Commandes
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.pickerTab, chatPicker === "alerts" && styles.pickerTabActive]}
+                onPress={() => setChatPicker("alerts")}
+                testID="tg-picker-alerts"
+              >
+                <Ionicons name="warning" size={14} color={chatPicker === "alerts" ? "#fff" : colors.muted} />
+                <Text style={[styles.pickerTabText, chatPicker === "alerts" && { color: "#fff" }]}>
+                  Alertes stock
+                </Text>
+              </Pressable>
             </View>
             <Text style={styles.help}>
-              Sur Telegram, envoyez d{`'`}abord <Text style={styles.codeInline}>/start</Text> à votre bot (juste un message, n{`'`}importe lequel). Puis appuyez sur {`"`}Détecter{`"`} ci-dessous.
+              {chatPicker === "orders"
+                ? "Choisissez le chat qui recevra les nouvelles commandes."
+                : "Choisissez le canal qui recevra les alertes de stock bas (optionnel). Laissez vide pour utiliser le chat des commandes."}
+            </Text>
+
+            {/* Currently saved chats display */}
+            <View style={{ gap: spacing.xs }}>
+              {chatId !== "" && (
+                <View style={styles.savedRow}>
+                  <Ionicons name="cart" size={18} color="#4ADE80" />
+                  <Text style={styles.savedText}>Commandes → {chatId}</Text>
+                </View>
+              )}
+              {alertsChatId !== "" && (
+                <View style={styles.savedRow}>
+                  <Ionicons name="warning" size={18} color="#FBBF24" />
+                  <Text style={styles.savedText}>Alertes stock → {alertsChatId}</Text>
+                  <Pressable onPress={clearAlertsChat} hitSlop={6} testID="tg-clear-alerts">
+                    <Ionicons name="close-circle" size={20} color={colors.muted} />
+                  </Pressable>
+                </View>
+              )}
+            </View>
+
+            {/* Manual chat id entry */}
+            <ManualChatIdInput
+              picker={chatPicker}
+              currentValue={chatPicker === "orders" ? chatId : alertsChatId}
+              onSubmit={(v) => selectChat(v)}
+            />
+
+            {/* Auto-detect */}
+            <Text style={styles.helpSmall}>
+              Astuce : envoyez n{`'`}importe quel message à votre bot dans le chat ou canal cible, puis appuyez sur Détecter.
             </Text>
             <Pressable
               style={[styles.btnSecondary, discovering && { opacity: 0.5 }]}
@@ -236,36 +328,6 @@ export default function AdminTelegramScreen() {
 
             {chats.length > 0 && (
               <View style={{ gap: spacing.sm, marginTop: spacing.sm }}>
-                <View style={styles.pickerTabs}>
-                  <Pressable
-                    style={[styles.pickerTab, chatPicker === "orders" && styles.pickerTabActive]}
-                    onPress={() => setChatPicker("orders")}
-                    testID="tg-picker-orders"
-                  >
-                    <Ionicons
-                      name="cart"
-                      size={14}
-                      color={chatPicker === "orders" ? "#fff" : colors.muted}
-                    />
-                    <Text style={[styles.pickerTabText, chatPicker === "orders" && { color: "#fff" }]}>
-                      Commandes
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.pickerTab, chatPicker === "alerts" && styles.pickerTabActive]}
-                    onPress={() => setChatPicker("alerts")}
-                    testID="tg-picker-alerts"
-                  >
-                    <Ionicons
-                      name="warning"
-                      size={14}
-                      color={chatPicker === "alerts" ? "#fff" : colors.muted}
-                    />
-                    <Text style={[styles.pickerTabText, chatPicker === "alerts" && { color: "#fff" }]}>
-                      Alertes stock
-                    </Text>
-                  </Pressable>
-                </View>
                 {chats.map((c) => {
                   const active = chatPicker === "alerts" ? alertsChatId === c.id : chatId === c.id;
                   return (
@@ -289,27 +351,6 @@ export default function AdminTelegramScreen() {
                   );
                 })}
               </View>
-            )}
-
-            {chatId !== "" && (
-              <View style={styles.savedRow}>
-                <Ionicons name="cart" size={18} color="#4ADE80" />
-                <Text style={styles.savedText}>Commandes → {chatId}</Text>
-              </View>
-            )}
-            {alertsChatId !== "" && (
-              <View style={styles.savedRow}>
-                <Ionicons name="warning" size={18} color="#FBBF24" />
-                <Text style={styles.savedText}>Alertes stock → {alertsChatId}</Text>
-                <Pressable onPress={clearAlertsChat} hitSlop={6} testID="tg-clear-alerts">
-                  <Ionicons name="close-circle" size={20} color={colors.muted} />
-                </Pressable>
-              </View>
-            )}
-            {alertsChatId === "" && chatId !== "" && (
-              <Text style={[styles.help, { fontStyle: "italic", marginTop: spacing.xs }]}>
-                Astuce : sélectionnez un canal d&apos;alertes séparé pour ne pas mélanger les notifications de stock avec les commandes.
-              </Text>
             )}
           </View>
 
@@ -420,6 +461,14 @@ const styles = StyleSheet.create({
   },
   pickerTabActive: { backgroundColor: colors.brand },
   pickerTabText: { color: colors.muted, fontSize: font.sm, fontWeight: "700" },
+  helpSmall: { color: colors.muted, fontSize: font.sm, fontStyle: "italic", marginTop: spacing.xs },
+  smallBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    backgroundColor: colors.brand,
+    borderRadius: radius.md,
+  },
+  smallBtnText: { color: "#fff", fontWeight: "800", fontSize: font.sm },
   msg: { flexDirection: "row", gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, alignItems: "flex-start" },
   msgOk: { backgroundColor: "#0F2A20", borderWidth: 1, borderColor: "#1A4D38" },
   msgErr: { backgroundColor: "#3F1414", borderWidth: 1, borderColor: "#7F1D1D" },

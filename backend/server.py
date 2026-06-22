@@ -1399,31 +1399,43 @@ async def admin_save_telegram(payload: TelegramConfigIn, _admin: dict = Depends(
 
 @api_router.post("/admin/telegram/discover")
 async def admin_discover_chat(_admin: dict = Depends(require_admin)):
-    """Call Telegram getUpdates and return any chat_ids the bot has been talking to."""
+    """Return chats the bot has seen via either getUpdates or webhook-stored sightings."""
     doc = await db.app_config.find_one({"_id": "telegram"}) or {}
     token = (doc.get("bot_token") or "").strip()
     if not token:
         raise HTTPException(status_code=400, detail="Enregistrez d'abord le token du bot.")
-    url = f"https://api.telegram.org/bot{token}/getUpdates"
+
+    chats: dict[str, dict] = {}
+
+    # Always include chats seen through the webhook (works even when webhook is active)
+    seen = await db.telegram_seen_chats.find({}, {"_id": 0}).sort("last_seen", -1).to_list(100)
+    for s in seen:
+        if s.get("id"):
+            chats[str(s["id"])] = {
+                "id": str(s["id"]),
+                "type": s.get("type") or "private",
+                "title": s.get("title") or "",
+            }
+
+    # Also try getUpdates (only works when webhook is NOT set)
     try:
         async with httpx.AsyncClient(timeout=8.0) as c:
-            r = await c.get(url)
+            r = await c.get(f"https://api.telegram.org/bot{token}/getUpdates")
             data = r.json()
+        if data.get("ok"):
+            for upd in data.get("result", []):
+                msg = upd.get("message") or upd.get("channel_post") or {}
+                chat = msg.get("chat")
+                if chat and chat.get("id") is not None:
+                    cid = str(chat["id"])
+                    chats[cid] = {
+                        "id": cid,
+                        "type": chat.get("type"),
+                        "title": chat.get("title") or chat.get("first_name") or "",
+                    }
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Telegram inaccessible : {e}")
-    if not data.get("ok"):
-        raise HTTPException(status_code=400, detail=data.get("description") or "Token invalide")
-    chats: dict[str, dict] = {}
-    for upd in data.get("result", []):
-        msg = upd.get("message") or upd.get("channel_post") or {}
-        chat = msg.get("chat")
-        if chat and chat.get("id") is not None:
-            cid = str(chat["id"])
-            chats[cid] = {
-                "id": cid,
-                "type": chat.get("type"),
-                "title": chat.get("title") or chat.get("first_name") or "",
-            }
+        logger.info("[telegram] getUpdates skipped: %s", e)
+
     return {"chats": list(chats.values())}
 
 
@@ -1530,6 +1542,24 @@ async def telegram_webhook(request: Request):
     msg = update.get("message")
     if msg:
         text = (msg.get("text") or "").strip()
+        # Remember chat sighting so the admin "Détecter" picker can show it
+        try:
+            chat = msg.get("chat") or {}
+            if chat.get("id") is not None:
+                title = chat.get("title") or chat.get("first_name") or chat.get("username") or ""
+                await db.telegram_seen_chats.update_one(
+                    {"id": str(chat["id"])},
+                    {"$set": {
+                        "id": str(chat["id"]),
+                        "type": chat.get("type"),
+                        "title": title,
+                        "last_seen": datetime.now(timezone.utc).isoformat(),
+                    }},
+                    upsert=True,
+                )
+        except Exception as e:
+            logger.warning("[telegram] seen_chats persist err: %s", e)
+
         if text.startswith("/start"):
             await _handle_telegram_start(msg, text)
         return {"ok": True}
