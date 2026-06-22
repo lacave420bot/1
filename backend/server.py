@@ -1,4 +1,5 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Query, Depends, status
+from fastapi.security import OAuth2PasswordBearer
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -8,7 +9,9 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional
 import uuid
-from datetime import datetime, timezone
+import bcrypt
+import jwt as pyjwt
+from datetime import datetime, timezone, timedelta
 
 
 ROOT_DIR = Path(__file__).parent
@@ -389,6 +392,244 @@ async def get_order(order_id: str):
     if not item:
         raise HTTPException(status_code=404, detail="Commande introuvable")
     return with_status(item)
+
+
+# ====================================================================
+# ADMIN AUTH + CRUD
+# ====================================================================
+
+JWT_SECRET = os.environ.get("JWT_SECRET_KEY", "change-me")
+JWT_ALGO = os.environ.get("JWT_ALGORITHM", "HS256")
+JWT_EXPIRE_HOURS = int(os.environ.get("JWT_EXPIRE_HOURS", "24"))
+LOCKOUT_THRESHOLD = int(os.environ.get("ADMIN_LOCKOUT_THRESHOLD", "5"))
+LOCKOUT_MINUTES = int(os.environ.get("ADMIN_LOCKOUT_MINUTES", "15"))
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/admin/login", auto_error=True)
+
+
+def _hash_pin(pin: str) -> str:
+    return bcrypt.hashpw(pin.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def _verify_pin(pin: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(pin.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
+
+
+def _make_token() -> tuple[str, int]:
+    exp = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS)
+    payload = {"sub": "admin", "exp": exp, "iat": datetime.now(timezone.utc)}
+    token = pyjwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
+    return token, JWT_EXPIRE_HOURS
+
+
+async def require_admin(token: str = Depends(oauth2_scheme)) -> dict:
+    try:
+        payload = pyjwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+    except pyjwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Session expirée")
+    except pyjwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Jeton invalide")
+    if payload.get("sub") != "admin":
+        raise HTTPException(status_code=401, detail="Accès refusé")
+    return payload
+
+
+class AdminLoginIn(BaseModel):
+    pin: str = Field(min_length=4, max_length=8)
+
+
+class AdminChangePinIn(BaseModel):
+    current_pin: str = Field(min_length=4, max_length=8)
+    new_pin: str = Field(min_length=4, max_length=8)
+
+
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_hours: int
+
+
+@app.on_event("startup")
+async def seed_admin():
+    existing = await db.admin_config.find_one({"_id": "admin"})
+    if existing is None:
+        initial = os.environ.get("ADMIN_INITIAL_PIN")
+        if not initial:
+            return
+        now = datetime.now(timezone.utc).isoformat()
+        await db.admin_config.insert_one(
+            {
+                "_id": "admin",
+                "pin_hash": _hash_pin(initial),
+                "failed_attempts": 0,
+                "lockout_until": None,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+
+
+@api_router.post("/admin/login", response_model=TokenOut)
+async def admin_login(body: AdminLoginIn):
+    doc = await db.admin_config.find_one({"_id": "admin"})
+    if doc is None:
+        raise HTTPException(status_code=500, detail="Administrateur non configuré")
+    now = datetime.now(timezone.utc)
+    lockout = doc.get("lockout_until")
+    if lockout:
+        try:
+            lockout_dt = datetime.fromisoformat(lockout) if isinstance(lockout, str) else lockout
+            if lockout_dt.tzinfo is None:
+                lockout_dt = lockout_dt.replace(tzinfo=timezone.utc)
+            if lockout_dt > now:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Trop de tentatives. Réessayez plus tard.",
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
+    if not _verify_pin(body.pin, doc["pin_hash"]):
+        attempts = int(doc.get("failed_attempts", 0)) + 1
+        update = {"failed_attempts": attempts, "updated_at": now.isoformat()}
+        if attempts >= LOCKOUT_THRESHOLD:
+            update["lockout_until"] = (now + timedelta(minutes=LOCKOUT_MINUTES)).isoformat()
+        await db.admin_config.update_one({"_id": "admin"}, {"$set": update})
+        raise HTTPException(status_code=401, detail="PIN invalide")
+
+    await db.admin_config.update_one(
+        {"_id": "admin"},
+        {"$set": {"failed_attempts": 0, "lockout_until": None, "updated_at": now.isoformat()}},
+    )
+    token, hours = _make_token()
+    return TokenOut(access_token=token, expires_hours=hours)
+
+
+@api_router.post("/admin/change-pin")
+async def admin_change_pin(body: AdminChangePinIn, _admin: dict = Depends(require_admin)):
+    doc = await db.admin_config.find_one({"_id": "admin"})
+    if doc is None:
+        raise HTTPException(status_code=500, detail="Administrateur non configuré")
+    if not _verify_pin(body.current_pin, doc["pin_hash"]):
+        raise HTTPException(status_code=401, detail="PIN actuel incorrect")
+    now = datetime.now(timezone.utc).isoformat()
+    await db.admin_config.update_one(
+        {"_id": "admin"},
+        {"$set": {"pin_hash": _hash_pin(body.new_pin), "updated_at": now,
+                  "failed_attempts": 0, "lockout_until": None}},
+    )
+    return {"status": "ok"}
+
+
+# ---------------- Admin CRUD: Products ----------------
+
+class ProductIn(BaseModel):
+    name: str
+    description: str
+    price: float
+    image: str
+    category_id: str
+    category_kind: str = "cbd"
+    unit: Optional[str] = None
+    popular: bool = False
+    promo: bool = False
+
+
+class ProductPatch(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    price: Optional[float] = None
+    image: Optional[str] = None
+    category_id: Optional[str] = None
+    category_kind: Optional[str] = None
+    unit: Optional[str] = None
+    popular: Optional[bool] = None
+    promo: Optional[bool] = None
+
+
+@api_router.post("/admin/products", response_model=Product)
+async def admin_create_product(payload: ProductIn, _admin: dict = Depends(require_admin)):
+    product = Product(**payload.dict())
+    await db.products.insert_one(product.dict())
+    return product
+
+
+@api_router.patch("/admin/products/{product_id}", response_model=Product)
+async def admin_update_product(product_id: str, payload: ProductPatch, _admin: dict = Depends(require_admin)):
+    update = {k: v for k, v in payload.dict(exclude_unset=True).items()}
+    if not update:
+        raise HTTPException(status_code=400, detail="Aucun champ à mettre à jour")
+    result = await db.products.update_one({"id": product_id}, {"$set": update})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Produit introuvable")
+    updated = await db.products.find_one({"id": product_id}, {"_id": 0})
+    return updated
+
+
+@api_router.delete("/admin/products/{product_id}")
+async def admin_delete_product(product_id: str, _admin: dict = Depends(require_admin)):
+    result = await db.products.delete_one({"id": product_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Produit introuvable")
+    return {"status": "ok"}
+
+
+# ---------------- Admin CRUD: Categories ----------------
+
+class CategoryIn(BaseModel):
+    id: str
+    name: str
+    icon: str = "leaf"
+    image: str
+    kind: str = "cbd"
+
+
+class CategoryPatch(BaseModel):
+    name: Optional[str] = None
+    icon: Optional[str] = None
+    image: Optional[str] = None
+    kind: Optional[str] = None
+
+
+@api_router.post("/admin/categories", response_model=Category)
+async def admin_create_category(payload: CategoryIn, _admin: dict = Depends(require_admin)):
+    existing = await db.categories.find_one({"id": payload.id})
+    if existing:
+        raise HTTPException(status_code=400, detail="Identifiant de catégorie déjà utilisé")
+    cat = Category(**payload.dict())
+    await db.categories.insert_one(cat.dict())
+    return cat
+
+
+@api_router.patch("/admin/categories/{category_id}", response_model=Category)
+async def admin_update_category(category_id: str, payload: CategoryPatch, _admin: dict = Depends(require_admin)):
+    update = {k: v for k, v in payload.dict(exclude_unset=True).items()}
+    if not update:
+        raise HTTPException(status_code=400, detail="Aucun champ à mettre à jour")
+    result = await db.categories.update_one({"id": category_id}, {"$set": update})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Catégorie introuvable")
+    updated = await db.categories.find_one({"id": category_id}, {"_id": 0})
+    return updated
+
+
+@api_router.delete("/admin/categories/{category_id}")
+async def admin_delete_category(category_id: str, _admin: dict = Depends(require_admin)):
+    in_use = await db.products.count_documents({"category_id": category_id})
+    if in_use > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cette catégorie est utilisée par {in_use} produit(s). Supprimez d'abord les produits.",
+        )
+    result = await db.categories.delete_one({"id": category_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Catégorie introuvable")
+    return {"status": "ok"}
 
 
 app.include_router(api_router)

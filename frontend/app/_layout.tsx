@@ -7,6 +7,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
+import { AdminProvider } from "@/src/store/admin";
 import { CartProvider } from "@/src/store/cart";
 
 LogBox.ignoreAllLogs(true);
@@ -29,26 +30,36 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <StatusBar style="light" />
         <CartProvider>
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: "#0A0A0B" },
-            }}
-          >
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen
-              name="product/[id]"
-              options={{ headerShown: false, presentation: "card" }}
-            />
-            <Stack.Screen
-              name="checkout"
-              options={{ headerShown: false, presentation: "card" }}
-            />
-            <Stack.Screen
-              name="order/[id]"
-              options={{ headerShown: false, presentation: "card" }}
-            />
-          </Stack>
+          <AdminProvider>
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: "#0A0A0B" },
+              }}
+            >
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen
+                name="product/[id]"
+                options={{ headerShown: false, presentation: "card" }}
+              />
+              <Stack.Screen
+                name="checkout"
+                options={{ headerShown: false, presentation: "card" }}
+              />
+              <Stack.Screen
+                name="order/[id]"
+                options={{ headerShown: false, presentation: "card" }}
+              />
+              <Stack.Screen
+                name="settings"
+                options={{ headerShown: false, presentation: "card" }}
+              />
+              <Stack.Screen
+                name="admin"
+                options={{ headerShown: false, presentation: "card" }}
+              />
+            </Stack>
+          </AdminProvider>
         </CartProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

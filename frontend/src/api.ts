@@ -54,14 +54,37 @@ export type Loyalty = {
   orders_count: number;
 };
 
+export type AdminToken = {
+  access_token: string;
+  token_type: string;
+  expires_hours: number;
+};
+
+let adminToken: string | null = null;
+export function setAdminToken(t: string | null) {
+  adminToken = t;
+}
+export function getAdminToken(): string | null {
+  return adminToken;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (adminToken) headers["Authorization"] = `Bearer ${adminToken}`;
+  // Merge with caller-provided headers
+  const callerHeaders = (init?.headers as Record<string, string>) || {};
   const res = await fetch(`${BASE_URL}/api${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...init,
+    headers: { ...headers, ...callerHeaders },
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || `HTTP ${res.status}`);
+    try {
+      const parsed = JSON.parse(text);
+      throw new Error(parsed.detail || text || `HTTP ${res.status}`);
+    } catch {
+      throw new Error(text || `HTTP ${res.status}`);
+    }
   }
   return res.json();
 }
@@ -101,4 +124,39 @@ export const api = {
   getOrder: (id: string) => request<Order>(`/orders/${id}`),
   getLoyalty: (guest_id: string) =>
     request<Loyalty>(`/loyalty/${encodeURIComponent(guest_id)}`),
+
+  adminLogin: (pin: string) =>
+    request<AdminToken>(`/admin/login`, {
+      method: "POST",
+      body: JSON.stringify({ pin }),
+    }),
+  adminChangePin: (current_pin: string, new_pin: string) =>
+    request<{ status: string }>(`/admin/change-pin`, {
+      method: "POST",
+      body: JSON.stringify({ current_pin, new_pin }),
+    }),
+  adminCreateProduct: (body: Partial<Product>) =>
+    request<Product>(`/admin/products`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  adminUpdateProduct: (id: string, body: Partial<Product>) =>
+    request<Product>(`/admin/products/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  adminDeleteProduct: (id: string) =>
+    request<{ status: string }>(`/admin/products/${id}`, { method: "DELETE" }),
+  adminCreateCategory: (body: Category) =>
+    request<Category>(`/admin/categories`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  adminUpdateCategory: (id: string, body: Partial<Category>) =>
+    request<Category>(`/admin/categories/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  adminDeleteCategory: (id: string) =>
+    request<{ status: string }>(`/admin/categories/${id}`, { method: "DELETE" }),
 };

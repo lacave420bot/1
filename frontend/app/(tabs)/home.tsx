@@ -175,6 +175,14 @@ export default function HomeScreen() {
           >
             <Ionicons name="notifications-outline" size={20} color={colors.onSurface} />
           </Pressable>
+          <Pressable
+            style={styles.iconBtn}
+            onPress={() => router.push("/settings")}
+            testID="home-settings-btn"
+            hitSlop={8}
+          >
+            <Ionicons name="settings-outline" size={20} color={colors.onSurface} />
+          </Pressable>
         </View>
       </SafeAreaView>
 
