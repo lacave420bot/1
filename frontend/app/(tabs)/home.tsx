@@ -22,6 +22,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AnimatedPressable } from "@/src/components/AnimatedPressable";
 import { api, type Category, type Order, type Product, minVariantPrice } from "@/src/api";
 import { useCart, formatPrice } from "@/src/store/cart";
+import { useAdmin } from "@/src/store/admin";
 import { useLoyalty } from "@/src/store/loyalty";
 import { colors, font, gradients, radius, shadows, spacing } from "@/src/theme";
 
@@ -52,6 +53,7 @@ function formatRelativeDate(iso: string): string {
 export default function HomeScreen() {
   const router = useRouter();
   const { count, guestId, ready } = useCart();
+  const { isAuthenticated: isAdmin } = useAdmin();
   const { loyalty, refresh: refreshLoyalty } = useLoyalty(guestId);
 
   const [categories, setCategories] = useState<Category[]>([]);
@@ -169,7 +171,7 @@ export default function HomeScreen() {
           </View>
           <Pressable
             style={styles.iconBtn}
-            onPress={() => router.push("/(tabs)/orders")}
+            onPress={() => router.push(isAdmin ? "/admin/orders" : "/(tabs)/orders")}
             testID="home-bell-btn"
             hitSlop={8}
           >

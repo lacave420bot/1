@@ -17,9 +17,8 @@ import { formatPrice } from "@/src/store/cart";
 import { colors, font, radius, shadows, spacing } from "@/src/theme";
 
 const STEPS = [
-  { key: "En préparation", label: "En préparation", icon: "restaurant-outline", iconDone: "restaurant" },
-  { key: "En livraison", label: "En livraison", icon: "bicycle-outline", iconDone: "bicycle" },
-  { key: "Livré", label: "Livré", icon: "home-outline", iconDone: "home" },
+  { key: "En cours", label: "En cours", icon: "time-outline", iconDone: "time" },
+  { key: "Terminée", label: "Terminée", icon: "checkmark-circle-outline", iconDone: "checkmark-circle" },
 ] as const;
 
 function formatDate(iso: string): string {
@@ -64,7 +63,7 @@ export default function OrderDetailScreen() {
 
   // Poll every 15s while not delivered so the timeline advances
   useEffect(() => {
-    if (!order || order.status === "Livré") {
+    if (!order || order.status === "Terminée" || order.status === "Annulée") {
       if (pollRef.current) {
         clearInterval(pollRef.current);
         pollRef.current = null;
@@ -131,7 +130,7 @@ export default function OrderDetailScreen() {
             <View
               style={[
                 styles.statusDot,
-                { backgroundColor: order.status === "Livré" ? colors.success : colors.brand },
+                { backgroundColor: order.status === "Terminée" ? colors.success : order.status === "Annulée" ? colors.error : colors.brand },
               ]}
             />
             <Text style={styles.statusText} testID="order-detail-status">
@@ -178,9 +177,8 @@ export default function OrderDetailScreen() {
                       {step.label}
                     </Text>
                     <Text style={styles.stepSub}>
-                      {i === 0 && "Nous préparons votre commande."}
-                      {i === 1 && "Notre livreur est en route."}
-                      {i === 2 && "Bon appétit !"}
+                      {i === 0 && "Votre commande est en cours de traitement."}
+                      {i === 1 && "Commande terminée — merci pour votre confiance !"}
                     </Text>
                   </View>
                 </View>

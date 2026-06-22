@@ -19,21 +19,13 @@ from datetime import datetime, timezone, timedelta
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-ORDER_STATUSES = ["En préparation", "Prête"]
-ADMIN_STATUS_CHOICES = ["En préparation", "Prête", "Récupérée", "Annulée"]
+ORDER_STATUSES = ["En cours", "Terminée"]
+ADMIN_STATUS_CHOICES = ["En cours", "Terminée", "Annulée"]
 
 
 def compute_status(created_at_iso: str) -> str:
-    try:
-        dt = datetime.fromisoformat(created_at_iso)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        elapsed_sec = (datetime.now(timezone.utc) - dt).total_seconds()
-    except Exception:
-        return ORDER_STATUSES[0]
-    if elapsed_sec < 300:  # < 5 min
-        return ORDER_STATUSES[0]
-    return ORDER_STATUSES[1]
+    # No auto-advance: stays "En cours" until admin marks it
+    return ORDER_STATUSES[0]
 
 
 def with_status(order_doc: dict) -> dict:

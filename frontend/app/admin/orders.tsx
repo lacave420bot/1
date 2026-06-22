@@ -20,25 +20,22 @@ import { formatPrice } from "@/src/store/cart";
 import { useAdmin } from "@/src/store/admin";
 import { colors, font, radius, shadows, spacing } from "@/src/theme";
 
-const STATUS_CHOICES = ["En préparation", "En livraison", "Livré", "Annulée"] as const;
+const STATUS_CHOICES = ["En cours", "Terminée", "Annulée"] as const;
 const FILTERS: { id: string; label: string }[] = [
   { id: "all", label: "Toutes" },
-  { id: "En préparation", label: "Préparation" },
-  { id: "En livraison", label: "Livraison" },
-  { id: "Livré", label: "Livrées" },
+  { id: "En cours", label: "En cours" },
+  { id: "Terminée", label: "Terminées" },
   { id: "Annulée", label: "Annulées" },
 ];
 
 function statusColor(s: string): { bg: string; fg: string; icon: keyof typeof Ionicons.glyphMap } {
   switch (s) {
-    case "Livré":
+    case "Terminée":
       return { bg: "#0F2A20", fg: "#4ADE80", icon: "checkmark-circle" };
-    case "En livraison":
-      return { bg: "#11233F", fg: "#7AB1FF", icon: "bicycle" };
     case "Annulée":
       return { bg: "#3F1414", fg: "#FCA5A5", icon: "close-circle" };
     default:
-      return { bg: "#2A1A12", fg: "#FB923C", icon: "restaurant" };
+      return { bg: "#11233F", fg: "#7AB1FF", icon: "time" };
   }
 }
 

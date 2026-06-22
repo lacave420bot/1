@@ -110,13 +110,13 @@ export default function OrdersScreen() {
                 <View
                   style={[
                     styles.statusBadge,
-                    o.status === "Livré" && styles.statusBadgeDone,
+                    o.status === "Terminée" && styles.statusBadgeDone,
                   ]}
                 >
                   <Text
                     style={[
                       styles.statusText,
-                      o.status === "Livré" && styles.statusTextDone,
+                      o.status === "Terminée" && styles.statusTextDone,
                     ]}
                   >
                     {o.status}
