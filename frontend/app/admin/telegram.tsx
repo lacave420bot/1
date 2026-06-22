@@ -25,8 +25,10 @@ export default function AdminTelegramScreen() {
   const { isAuthenticated, ready: adminReady } = useAdmin();
   const [tokenInput, setTokenInput] = useState("");
   const [chatId, setChatId] = useState("");
+  const [alertsChatId, setAlertsChatId] = useState("");
   const [maskedToken, setMaskedToken] = useState("");
   const [chats, setChats] = useState<Chat[]>([]);
+  const [chatPicker, setChatPicker] = useState<"orders" | "alerts">("orders");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [discovering, setDiscovering] = useState(false);
@@ -40,6 +42,7 @@ export default function AdminTelegramScreen() {
       const cfg = await api.adminGetTelegram();
       setMaskedToken(cfg.bot_token_masked);
       setChatId(cfg.chat_id || "");
+      setAlertsChatId(cfg.alerts_chat_id || "");
     } catch (e: any) {
       setMsg({ kind: "err", text: e?.message || "Erreur" });
     } finally {
@@ -62,7 +65,7 @@ export default function AdminTelegramScreen() {
     }
     try {
       setSaving(true); setMsg(null);
-      await api.adminSaveTelegram(tokenInput.trim(), chatId);
+      await api.adminSaveTelegram(tokenInput.trim(), chatId, alertsChatId);
       setTokenInput("");
       await loadConfig();
       setMsg({ kind: "ok", text: "Token enregistré." });
@@ -71,12 +74,29 @@ export default function AdminTelegramScreen() {
     } finally { setSaving(false); }
   };
 
-  const saveChatId = async (newId: string) => {
+  const selectChat = async (newId: string) => {
     try {
       setSaving(true); setMsg(null);
-      await api.adminSaveTelegram("", newId); // empty token = keep existing in backend
-      setChatId(newId);
-      setMsg({ kind: "ok", text: "Chat sélectionné." });
+      if (chatPicker === "alerts") {
+        await api.adminSaveTelegram("", chatId, newId);
+        setAlertsChatId(newId);
+        setMsg({ kind: "ok", text: "Canal d'alertes sélectionné." });
+      } else {
+        await api.adminSaveTelegram("", newId, alertsChatId);
+        setChatId(newId);
+        setMsg({ kind: "ok", text: "Chat principal sélectionné." });
+      }
+    } catch (e: any) {
+      setMsg({ kind: "err", text: e?.message || "Erreur" });
+    } finally { setSaving(false); }
+  };
+
+  const clearAlertsChat = async () => {
+    try {
+      setSaving(true); setMsg(null);
+      await api.adminSaveTelegram("", chatId, "");
+      setAlertsChatId("");
+      setMsg({ kind: "ok", text: "Canal d'alertes désactivé (les alertes iront sur le chat principal)." });
     } catch (e: any) {
       setMsg({ kind: "err", text: e?.message || "Erreur" });
     } finally { setSaving(false); }
@@ -216,13 +236,43 @@ export default function AdminTelegramScreen() {
 
             {chats.length > 0 && (
               <View style={{ gap: spacing.sm, marginTop: spacing.sm }}>
+                <View style={styles.pickerTabs}>
+                  <Pressable
+                    style={[styles.pickerTab, chatPicker === "orders" && styles.pickerTabActive]}
+                    onPress={() => setChatPicker("orders")}
+                    testID="tg-picker-orders"
+                  >
+                    <Ionicons
+                      name="cart"
+                      size={14}
+                      color={chatPicker === "orders" ? "#fff" : colors.muted}
+                    />
+                    <Text style={[styles.pickerTabText, chatPicker === "orders" && { color: "#fff" }]}>
+                      Commandes
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.pickerTab, chatPicker === "alerts" && styles.pickerTabActive]}
+                    onPress={() => setChatPicker("alerts")}
+                    testID="tg-picker-alerts"
+                  >
+                    <Ionicons
+                      name="warning"
+                      size={14}
+                      color={chatPicker === "alerts" ? "#fff" : colors.muted}
+                    />
+                    <Text style={[styles.pickerTabText, chatPicker === "alerts" && { color: "#fff" }]}>
+                      Alertes stock
+                    </Text>
+                  </Pressable>
+                </View>
                 {chats.map((c) => {
-                  const active = chatId === c.id;
+                  const active = chatPicker === "alerts" ? alertsChatId === c.id : chatId === c.id;
                   return (
                     <Pressable
                       key={c.id}
                       style={[styles.chatRow, active && { borderColor: colors.brand, backgroundColor: colors.brandSecondary }]}
-                      onPress={() => saveChatId(c.id)}
+                      onPress={() => selectChat(c.id)}
                       testID={`tg-chat-${c.id}`}
                     >
                       <Ionicons
@@ -243,9 +293,23 @@ export default function AdminTelegramScreen() {
 
             {chatId !== "" && (
               <View style={styles.savedRow}>
-                <Ionicons name="checkmark-circle" size={20} color="#4ADE80" />
-                <Text style={styles.savedText}>Chat sélectionné : {chatId}</Text>
+                <Ionicons name="cart" size={18} color="#4ADE80" />
+                <Text style={styles.savedText}>Commandes → {chatId}</Text>
               </View>
+            )}
+            {alertsChatId !== "" && (
+              <View style={styles.savedRow}>
+                <Ionicons name="warning" size={18} color="#FBBF24" />
+                <Text style={styles.savedText}>Alertes stock → {alertsChatId}</Text>
+                <Pressable onPress={clearAlertsChat} hitSlop={6} testID="tg-clear-alerts">
+                  <Ionicons name="close-circle" size={20} color={colors.muted} />
+                </Pressable>
+              </View>
+            )}
+            {alertsChatId === "" && chatId !== "" && (
+              <Text style={[styles.help, { fontStyle: "italic", marginTop: spacing.xs }]}>
+                Astuce : sélectionnez un canal d&apos;alertes séparé pour ne pas mélanger les notifications de stock avec les commandes.
+              </Text>
             )}
           </View>
 
@@ -337,6 +401,25 @@ const styles = StyleSheet.create({
   chatRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface },
   chatTitle: { color: colors.onSurface, fontWeight: "700", fontSize: font.base },
   chatSub: { color: colors.muted, fontSize: font.sm, marginTop: 2 },
+  pickerTabs: {
+    flexDirection: "row",
+    gap: spacing.xs,
+    backgroundColor: colors.surfaceTertiary,
+    borderRadius: radius.pill,
+    padding: 4,
+  },
+  pickerTab: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+  },
+  pickerTabActive: { backgroundColor: colors.brand },
+  pickerTabText: { color: colors.muted, fontSize: font.sm, fontWeight: "700" },
   msg: { flexDirection: "row", gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, alignItems: "flex-start" },
   msgOk: { backgroundColor: "#0F2A20", borderWidth: 1, borderColor: "#1A4D38" },
   msgErr: { backgroundColor: "#3F1414", borderWidth: 1, borderColor: "#7F1D1D" },

@@ -569,6 +569,18 @@ async def _get_telegram_config() -> tuple[str, str]:
     return TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
 
+async def _get_alerts_chat_id() -> str:
+    """Read the (optional) dedicated alerts chat id, fall back to the orders chat id."""
+    doc = await db.app_config.find_one({"_id": "telegram"})
+    if doc:
+        alerts = (doc.get("alerts_chat_id") or "").strip()
+        if alerts:
+            return alerts
+    # Fallback to main chat
+    _, chat_id = await _get_telegram_config()
+    return chat_id
+
+
 # ----- Resend (transactional email) -----
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
 SHOP_NAME = os.getenv("SHOP_NAME", "La Cave 420").strip()
@@ -865,8 +877,11 @@ async def send_low_stock_alert(alerts: list[dict]) -> None:
     crossed their low-stock threshold or just went out of stock."""
     if not alerts:
         return
-    token, chat_id = await _get_telegram_config()
-    if not token or not chat_id:
+    token, _ = await _get_telegram_config()
+    if not token:
+        return
+    target_chat = await _get_alerts_chat_id()
+    if not target_chat:
         return
     lines = ["⚠️ <b>Alerte stock</b>"]
     for a in alerts:
@@ -884,7 +899,7 @@ async def send_low_stock_alert(alerts: list[dict]) -> None:
             await client_h.post(
                 f"https://api.telegram.org/bot{token}/sendMessage",
                 json={
-                    "chat_id": chat_id,
+                    "chat_id": target_chat,
                     "text": text,
                     "parse_mode": "HTML",
                     "disable_web_page_preview": True,
@@ -897,6 +912,7 @@ async def send_low_stock_alert(alerts: list[dict]) -> None:
 class TelegramConfigIn(BaseModel):
     bot_token: str
     chat_id: str = ""
+    alerts_chat_id: str = ""
 
 
 def _mask_token(t: str) -> str:
@@ -1302,6 +1318,7 @@ async def admin_get_telegram(_admin: dict = Depends(require_admin)):
         "bot_token_masked": _mask_token(doc.get("bot_token", "")),
         "has_token": bool(doc.get("bot_token")),
         "chat_id": doc.get("chat_id", ""),
+        "alerts_chat_id": doc.get("alerts_chat_id", ""),
     }
 
 
@@ -1311,6 +1328,7 @@ async def admin_save_telegram(payload: TelegramConfigIn, _admin: dict = Depends(
     if payload.bot_token.strip():
         update["bot_token"] = payload.bot_token.strip()
     update["chat_id"] = payload.chat_id.strip()
+    update["alerts_chat_id"] = payload.alerts_chat_id.strip()
     await db.app_config.update_one({"_id": "telegram"}, {"$set": update}, upsert=True)
     return {"status": "ok"}
 

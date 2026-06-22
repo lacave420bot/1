@@ -214,13 +214,13 @@ export const api = {
       body: JSON.stringify({ ids }),
     }),
   adminGetTelegram: () =>
-    request<{ bot_token_masked: string; has_token: boolean; chat_id: string }>(
+    request<{ bot_token_masked: string; has_token: boolean; chat_id: string; alerts_chat_id?: string }>(
       `/admin/telegram`,
     ),
-  adminSaveTelegram: (bot_token: string, chat_id: string) =>
+  adminSaveTelegram: (bot_token: string, chat_id: string, alerts_chat_id: string = "") =>
     request<{ status: string }>(`/admin/telegram`, {
       method: "POST",
-      body: JSON.stringify({ bot_token, chat_id }),
+      body: JSON.stringify({ bot_token, chat_id, alerts_chat_id }),
     }),
   adminDiscoverChats: () =>
     request<{ chats: { id: string; type?: string; title?: string }[] }>(
