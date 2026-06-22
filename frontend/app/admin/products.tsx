@@ -109,6 +109,23 @@ export default function AdminProductsScreen() {
     setModalOpen(true);
   };
 
+  const openDuplicate = (p: Product) => {
+    setDraft({
+      // No id => create mode
+      name: `${p.name} (copie)`,
+      description: p.description,
+      price: String(p.price),
+      image: p.image,
+      category_id: p.category_id,
+      unit: p.unit || "",
+      popular: !!p.popular,
+      promo: !!p.promo,
+      variants: (p.variants || []).map((v) => ({ label: v.label, price: String(v.price) })),
+    });
+    setErr(null);
+    setModalOpen(true);
+  };
+
   const save = async () => {
     if (!draft.name.trim() || !draft.price.trim() || !draft.category_id) {
       setErr("Nom, prix et catégorie sont obligatoires.");
@@ -211,6 +228,14 @@ export default function AdminProductsScreen() {
                 hitSlop={6}
               >
                 <Ionicons name="create-outline" size={18} color={colors.brand} />
+              </Pressable>
+              <Pressable
+                onPress={() => openDuplicate(p)}
+                style={styles.iconBtn}
+                testID={`admin-product-duplicate-${p.id}`}
+                hitSlop={6}
+              >
+                <Ionicons name="copy-outline" size={18} color="#B19CFF" />
               </Pressable>
               <Pressable
                 onPress={() => doDelete(p)}
