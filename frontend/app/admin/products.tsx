@@ -1,11 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import * as ImagePicker from "expo-image-picker";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -65,6 +67,95 @@ export default function AdminProductsScreen() {
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [pickingImage, setPickingImage] = useState(false);
+
+  // ---- Image picker helpers (camera / gallery) ----
+  const askGoToSettings = (label: string) => {
+    Alert.alert(
+      `Accès ${label} refusé`,
+      "Activez l'accès dans les réglages de l'app pour ajouter une photo.",
+      [
+        { text: "Annuler", style: "cancel" },
+        { text: "Ouvrir réglages", onPress: () => Linking.openSettings() },
+      ],
+    );
+  };
+
+  const handlePickerResult = (result: ImagePicker.ImagePickerResult) => {
+    if (result.canceled || !result.assets || result.assets.length === 0) return;
+    const asset = result.assets[0];
+    // Prefer base64 if provided, else fall back to uri (works for HTTP and content URIs on web)
+    if (asset.base64) {
+      const mime = asset.mimeType || "image/jpeg";
+      setDraft((d) => ({ ...d, image: `data:${mime};base64,${asset.base64}` }));
+    } else if (asset.uri) {
+      setDraft((d) => ({ ...d, image: asset.uri }));
+    }
+  };
+
+  const pickFromCamera = async () => {
+    try {
+      setPickingImage(true);
+      const current = await ImagePicker.getCameraPermissionsAsync();
+      let granted = current.granted;
+      if (!granted) {
+        if (!current.canAskAgain) {
+          askGoToSettings("caméra");
+          return;
+        }
+        const res = await ImagePicker.requestCameraPermissionsAsync();
+        granted = res.granted;
+        if (!granted) {
+          if (!res.canAskAgain) askGoToSettings("caméra");
+          return;
+        }
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ["images"],
+        quality: 0.6,
+        base64: true,
+        allowsEditing: true,
+        aspect: [1, 1],
+      });
+      handlePickerResult(result);
+    } catch (e: any) {
+      Alert.alert("Erreur", e?.message || "Impossible d'accéder à la caméra.");
+    } finally {
+      setPickingImage(false);
+    }
+  };
+
+  const pickFromGallery = async () => {
+    try {
+      setPickingImage(true);
+      const current = await ImagePicker.getMediaLibraryPermissionsAsync();
+      let granted = current.granted;
+      if (!granted) {
+        if (!current.canAskAgain) {
+          askGoToSettings("galerie");
+          return;
+        }
+        const res = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        granted = res.granted;
+        if (!granted) {
+          if (!res.canAskAgain) askGoToSettings("galerie");
+          return;
+        }
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        quality: 0.6,
+        base64: true,
+        allowsEditing: true,
+        aspect: [1, 1],
+      });
+      handlePickerResult(result);
+    } catch (e: any) {
+      Alert.alert("Erreur", e?.message || "Impossible d'accéder à la galerie.");
+    } finally {
+      setPickingImage(false);
+    }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -288,8 +379,64 @@ export default function AdminProductsScreen() {
                   })}
                 </ScrollView>
               </Field>
-              <Field label="URL Image">
-                <TextInput value={draft.image} onChangeText={(t) => setDraft({ ...draft, image: t })} style={styles.input} placeholder="https://..." placeholderTextColor={colors.muted} testID="draft-image" autoCapitalize="none" />
+              <Field label="Image du produit">
+                <View style={{ gap: spacing.sm }}>
+                  <View style={styles.imagePreviewBox}>
+                    {draft.image ? (
+                      <Image source={{ uri: draft.image }} style={styles.imagePreview} contentFit="cover" />
+                    ) : (
+                      <View style={styles.imagePreviewPlaceholder}>
+                        <Ionicons name="image-outline" size={42} color={colors.muted} />
+                        <Text style={styles.imagePreviewHint}>Aucune image</Text>
+                      </View>
+                    )}
+                    {draft.image ? (
+                      <Pressable
+                        style={styles.imageClearBtn}
+                        onPress={() => setDraft({ ...draft, image: "" })}
+                        hitSlop={8}
+                        testID="draft-image-clear"
+                      >
+                        <Ionicons name="close" size={16} color="#fff" />
+                      </Pressable>
+                    ) : null}
+                  </View>
+                  <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                    <Pressable
+                      style={[styles.imageActionBtn, pickingImage && styles.imageActionBtnDisabled]}
+                      onPress={pickFromCamera}
+                      disabled={pickingImage}
+                      testID="draft-image-camera"
+                    >
+                      <Ionicons name="camera" size={18} color={colors.brand} />
+                      <Text style={styles.imageActionText}>Photo</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.imageActionBtn, pickingImage && styles.imageActionBtnDisabled]}
+                      onPress={pickFromGallery}
+                      disabled={pickingImage}
+                      testID="draft-image-gallery"
+                    >
+                      <Ionicons name="images" size={18} color={colors.brand} />
+                      <Text style={styles.imageActionText}>Galerie</Text>
+                    </Pressable>
+                  </View>
+                  {pickingImage && (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+                      <ActivityIndicator size="small" color={colors.brand} />
+                      <Text style={{ color: colors.muted, fontSize: font.sm }}>Traitement de l&apos;image…</Text>
+                    </View>
+                  )}
+                  <TextInput
+                    value={draft.image.startsWith("data:") ? "" : draft.image}
+                    onChangeText={(t) => setDraft({ ...draft, image: t })}
+                    style={styles.input}
+                    placeholder="Ou collez une URL https://..."
+                    placeholderTextColor={colors.muted}
+                    testID="draft-image"
+                    autoCapitalize="none"
+                  />
+                </View>
               </Field>
 
               <View style={{ gap: spacing.sm }}>
@@ -415,4 +562,43 @@ const styles = StyleSheet.create({
   cancelText: { color: colors.muted, fontWeight: "600" },
   saveBtn: { flex: 2, height: 48, borderRadius: radius.pill, backgroundColor: colors.brand, alignItems: "center", justifyContent: "center" },
   saveText: { color: "#fff", fontWeight: "700", fontSize: font.base },
+
+  imagePreviewBox: {
+    width: "100%",
+    aspectRatio: 1,
+    borderRadius: radius.md,
+    overflow: "hidden",
+    backgroundColor: colors.surfaceTertiary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    position: "relative",
+  },
+  imagePreview: { width: "100%", height: "100%" },
+  imagePreviewPlaceholder: { flex: 1, alignItems: "center", justifyContent: "center", gap: 6 },
+  imagePreviewHint: { color: colors.muted, fontSize: font.sm },
+  imageClearBtn: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  imageActionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.brandSecondary,
+    borderWidth: 1,
+    borderColor: colors.brand,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+  },
+  imageActionBtnDisabled: { opacity: 0.5 },
+  imageActionText: { color: colors.brand, fontWeight: "700", fontSize: font.base },
 });
