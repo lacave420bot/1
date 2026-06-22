@@ -173,12 +173,8 @@ export default function HomeScreen() {
     <View style={styles.root} testID="home-screen">
       <SafeAreaView edges={["top"]} style={{ backgroundColor: colors.surface }}>
         <View style={styles.topBar}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>V</Text>
-          </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.topGreet}>Bonsoir</Text>
-            <Text style={styles.topBrand}>La Cave 420</Text>
+            <Text style={styles.topBrand}>La Cave 420 🫶🏽</Text>
           </View>
           <Pressable
             style={styles.iconBtn}
@@ -486,8 +482,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   avatarText: { color: "#fff", fontSize: font.lg, fontWeight: "800" },
-  topGreet: { color: colors.muted, fontSize: font.sm },
-  topBrand: { color: colors.onSurface, fontSize: font.lg, fontWeight: "700" },
+  topBrand: { color: colors.onSurface, fontSize: font.xl, fontWeight: "800" },
   iconBtn: {
     width: 40,
     height: 40,
