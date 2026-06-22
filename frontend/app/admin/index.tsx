@@ -31,6 +31,7 @@ export default function AdminIndex() {
     { id: "orders", label: "Commandes", icon: "receipt", bg: "#0F2A20", fg: "#4ADE80", path: "/admin/orders" },
     { id: "products", label: "Produits", icon: "cube", bg: "#11233F", fg: "#7AB1FF", path: "/admin/products" },
     { id: "categories", label: "Catégories", icon: "grid", bg: "#1A1A2E", fg: "#B19CFF", path: "/admin/categories" },
+    { id: "promo-codes", label: "Codes Promo", icon: "pricetag", bg: "#2A1F0E", fg: "#FBBF24", path: "/admin/promo-codes" },
     { id: "telegram", label: "Notifications Telegram", icon: "paper-plane", bg: "#11233F", fg: "#7AB1FF", path: "/admin/telegram" },
     { id: "pin", label: "Changer le PIN", icon: "key", bg: "#2A1A12", fg: "#FB923C", path: "/admin/change-pin" },
   ] as const;

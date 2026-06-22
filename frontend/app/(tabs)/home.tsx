@@ -54,7 +54,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const { count, guestId } = useCart();
   const { isAuthenticated: isAdmin } = useAdmin();
-  const { loyalty, refresh: refreshLoyalty } = useLoyalty(guestId);
+  const { refresh: refreshLoyalty } = useLoyalty(guestId);
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [popular, setPopular] = useState<Product[]>([]);
@@ -130,9 +130,6 @@ export default function HomeScreen() {
     );
   }
 
-  const points = loyalty?.points_balance ?? 0;
-  const totalEarned = loyalty?.total_earned ?? 0;
-
   const actions: ActionTile[] = [
     {
       id: "catalog",
@@ -207,45 +204,6 @@ export default function HomeScreen() {
           />
         }
       >
-        {/* Hero — Loyalty balance card */}
-        <Animated.View entering={FadeInDown.duration(500).delay(50)}>
-          <AnimatedPressable
-            onPress={() => router.push("/(tabs)/catalog")}
-            style={styles.hero}
-            scale={0.97}
-            testID="home-loyalty-hero"
-          >
-            <LinearGradient
-              colors={gradients.heroBlue}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.heroGrad}
-            >
-              <View style={styles.heroTopRow}>
-                <Text style={styles.heroLabel}>Cagnotte fidélité</Text>
-                <Ionicons name="gift" size={20} color="rgba(255,255,255,0.85)" />
-              </View>
-              <Text style={styles.heroAmount} testID="home-points-balance">
-                {formatPrice(points)}
-              </Text>
-              <Text style={styles.heroSub}>
-                {points > 0
-                  ? `Utilisable dès votre prochaine commande`
-                  : `Gagnez 1 € pour chaque 10 € dépensés`}
-              </Text>
-              <View style={styles.heroFooterRow}>
-                <View style={styles.heroChip}>
-                  <Ionicons name="trending-up" size={12} color="#fff" />
-                  <Text style={styles.heroChipText}>
-                    {formatPrice(totalEarned)} cumulés
-                  </Text>
-                </View>
-                <Ionicons name="arrow-forward" size={18} color="#fff" />
-              </View>
-            </LinearGradient>
-          </AnimatedPressable>
-        </Animated.View>
-
         {/* Action grid */}
         <Animated.View
           entering={FadeInDown.duration(500).delay(150)}
