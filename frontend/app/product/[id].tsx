@@ -62,10 +62,33 @@ export default function ProductDetailScreen() {
     );
   }
 
+  // Parse grams from variant label ("1 g" → 1, "10 g" → 10), or use explicit `grams` field
+  const variantGrams = (v: { label?: string; grams?: number | null } | null | undefined): number | null => {
+    if (!v) return null;
+    if (typeof v.grams === "number" && v.grams > 0) return v.grams;
+    const m = (v.label || "").match(/([\d]+(?:[.,][\d]+)?)\s*g/i);
+    if (!m) return null;
+    const n = parseFloat(m[1].replace(",", "."));
+    return isNaN(n) ? null : n;
+  };
+
+  // Determine if a variant is currently available (gram-stock priority, fallback to per-variant stock)
+  const variantAvailableQty = (v: any): number | null => {
+    if (!v) return 0;
+    const total = (product as any)?.total_stock_grams;
+    const grams = variantGrams(v);
+    if (typeof total === "number" && grams && grams > 0) {
+      return Math.floor((total + 1e-6) / grams);
+    }
+    if (v.stock == null) return null; // unlimited
+    return Math.max(0, Number(v.stock) || 0);
+  };
+
   const handleAdd = () => {
     const v = product.variants && product.variants.length > 0 ? product.variants[variantIdx] : null;
     if (!v) return;
-    if (v.stock != null && v.stock <= 0) return; // out of stock
+    const avail = variantAvailableQty(v);
+    if (avail !== null && avail < qty) return; // out of stock
     addItem(product, v.label, v.price, qty);
     router.back();
   };
@@ -73,11 +96,16 @@ export default function ProductDetailScreen() {
   const displayPrice = currentVariant ? currentVariant.price : product?.price ?? 0;
 
   // Stock status for the currently selected variant
-  const variantStock = currentVariant?.stock ?? null;
-  const variantThreshold = currentVariant?.low_stock_threshold ?? 5;
-  const isOutOfStock = variantStock !== null && variantStock <= 0;
-  const isLowStock = variantStock !== null && variantStock > 0 && variantStock <= variantThreshold;
-  const maxQty = variantStock !== null ? Math.max(1, variantStock) : 999;
+  const currentAvail = variantAvailableQty(currentVariant);
+  const totalG = (product as any)?.total_stock_grams as number | null | undefined;
+  const lowThrG = ((product as any)?.low_stock_threshold_grams as number | null | undefined) ?? 5;
+  const isOutOfStock = currentAvail !== null && currentAvail <= 0;
+  const isLowStock =
+    !isOutOfStock &&
+    typeof totalG === "number" &&
+    totalG > 0 &&
+    totalG <= lowThrG;
+  const maxQty = currentAvail === null ? 999 : Math.max(1, currentAvail);
 
   return (
     <View style={styles.root} testID="product-screen">
@@ -130,10 +158,41 @@ export default function ProductDetailScreen() {
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
                 {product.variants.map((v, i) => {
                   const active = i === variantIdx;
+                  const avail = variantAvailableQty(v);
+                  const sold = avail !== null && avail <= 0;
                   return (
-                    <Pressable key={v.label} onPress={() => setVariantIdx(i)} testID={`product-variant-${v.label}`} style={{ borderWidth: 1.5, borderColor: active ? colors.brand : colors.border, backgroundColor: active ? colors.brandSecondary : colors.surfaceSecondary, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 10, alignItems: "center" }}>
-                      <Text style={{ color: active ? colors.brand : colors.onSurface, fontWeight: "800", fontSize: 14 }}>{v.label}</Text>
-                      <Text style={{ color: active ? colors.brand : colors.muted, fontSize: 12, fontWeight: "600", marginTop: 2 }}>{formatPrice(v.price)}</Text>
+                    <Pressable
+                      key={v.label}
+                      onPress={() => { if (!sold) setVariantIdx(i); }}
+                      disabled={sold}
+                      testID={`product-variant-${v.label}`}
+                      style={{
+                        borderWidth: 1.5,
+                        borderColor: sold ? "#7F1D1D" : (active ? colors.brand : colors.border),
+                        backgroundColor: sold
+                          ? "#1F0A0A"
+                          : (active ? colors.brandSecondary : colors.surfaceSecondary),
+                        borderRadius: 999,
+                        paddingHorizontal: 16,
+                        paddingVertical: 10,
+                        alignItems: "center",
+                        opacity: sold ? 0.6 : 1,
+                      }}
+                    >
+                      <Text style={{
+                        color: sold ? "#FCA5A5" : (active ? colors.brand : colors.onSurface),
+                        fontWeight: "800",
+                        fontSize: 14,
+                        textDecorationLine: sold ? "line-through" : "none",
+                      }}>{v.label}</Text>
+                      <Text style={{
+                        color: sold ? "#FCA5A5" : (active ? colors.brand : colors.muted),
+                        fontSize: 12,
+                        fontWeight: "600",
+                        marginTop: 2,
+                      }}>
+                        {sold ? "Rupture" : formatPrice(v.price)}
+                      </Text>
                     </Pressable>
                   );
                 })}

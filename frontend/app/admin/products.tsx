@@ -34,7 +34,9 @@ type Draft = {
   unit: string;
   popular: boolean;
   promo: boolean;
-  variants: { label: string; price: string; stock: string; threshold: string }[];
+  variants: { label: string; price: string }[];
+  total_stock_grams: string;
+  low_stock_threshold_grams: string;
 };
 
 const EMPTY: Draft = {
@@ -47,14 +49,16 @@ const EMPTY: Draft = {
   popular: false,
   promo: false,
   variants: [],
+  total_stock_grams: "",
+  low_stock_threshold_grams: "",
 };
 
-const DEFAULT_VARIANTS_PRESET: { label: string; price: string; stock: string; threshold: string }[] = [
-  { label: "1 g", price: "9", stock: "", threshold: "" },
-  { label: "5 g", price: "40", stock: "", threshold: "" },
-  { label: "10 g", price: "75", stock: "", threshold: "" },
-  { label: "25 g", price: "175", stock: "", threshold: "" },
-  { label: "50 g", price: "320", stock: "", threshold: "" },
+const DEFAULT_VARIANTS_PRESET: { label: string; price: string }[] = [
+  { label: "1 g", price: "9" },
+  { label: "5 g", price: "40" },
+  { label: "10 g", price: "75" },
+  { label: "25 g", price: "175" },
+  { label: "50 g", price: "320" },
 ];
 
 export default function AdminProductsScreen() {
@@ -197,9 +201,9 @@ export default function AdminProductsScreen() {
       variants: (p.variants || []).map((v) => ({
         label: v.label,
         price: String(v.price),
-        stock: v.stock == null ? "" : String(v.stock),
-        threshold: v.low_stock_threshold == null ? "" : String(v.low_stock_threshold),
       })),
+      total_stock_grams: p.total_stock_grams == null ? "" : String(p.total_stock_grams),
+      low_stock_threshold_grams: p.low_stock_threshold_grams == null ? "" : String(p.low_stock_threshold_grams),
     });
     setErr(null);
     setModalOpen(true);
@@ -219,9 +223,9 @@ export default function AdminProductsScreen() {
       variants: (p.variants || []).map((v) => ({
         label: v.label,
         price: String(v.price),
-        stock: v.stock == null ? "" : String(v.stock),
-        threshold: v.low_stock_threshold == null ? "" : String(v.low_stock_threshold),
       })),
+      total_stock_grams: p.total_stock_grams == null ? "" : String(p.total_stock_grams),
+      low_stock_threshold_grams: p.low_stock_threshold_grams == null ? "" : String(p.low_stock_threshold_grams),
     });
     setErr(null);
     setModalOpen(true);
@@ -242,16 +246,12 @@ export default function AdminProductsScreen() {
       setErr(null);
       const variants = draft.variants
         .filter((v) => v.label.trim() && v.price.trim())
-        .map((v) => {
-          const stockTrim = (v.stock || "").trim();
-          const thrTrim = (v.threshold || "").trim();
-          return {
-            label: v.label.trim(),
-            price: parseFloat(v.price.replace(",", ".")) || 0,
-            stock: stockTrim === "" ? null : Math.max(0, parseInt(stockTrim, 10) || 0),
-            low_stock_threshold: thrTrim === "" ? null : Math.max(0, parseInt(thrTrim, 10) || 0),
-          };
-        });
+        .map((v) => ({
+          label: v.label.trim(),
+          price: parseFloat(v.price.replace(",", ".")) || 0,
+        }));
+      const totalG = draft.total_stock_grams.trim();
+      const thrG = draft.low_stock_threshold_grams.trim();
       const body = {
         name: draft.name.trim(),
         description: draft.description.trim(),
@@ -262,6 +262,8 @@ export default function AdminProductsScreen() {
         popular: draft.popular,
         promo: draft.promo,
         variants,
+        total_stock_grams: totalG === "" ? null : Math.max(0, parseFloat(totalG.replace(",", ".")) || 0),
+        low_stock_threshold_grams: thrG === "" ? null : Math.max(0, parseFloat(thrG.replace(",", ".")) || 0),
       };
       if (draft.id) {
         await api.adminUpdateProduct(draft.id, body);
@@ -507,50 +509,52 @@ export default function AdminProductsScreen() {
                         <Ionicons name="trash-outline" size={16} color={colors.error} />
                       </Pressable>
                     </View>
-                    <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                      <View style={{ flex: 1, gap: 2 }}>
-                        <Text style={styles.subLabel}>Stock</Text>
-                        <TextInput
-                          value={v.stock}
-                          onChangeText={(t) => {
-                            const next = [...draft.variants];
-                            next[i] = { ...next[i], stock: t.replace(/[^0-9]/g, "") };
-                            setDraft({ ...draft, variants: next });
-                          }}
-                          placeholder="Illimité"
-                          placeholderTextColor={colors.muted}
-                          keyboardType="number-pad"
-                          style={styles.input}
-                          testID={`draft-variant-stock-${i}`}
-                        />
-                      </View>
-                      <View style={{ flex: 1, gap: 2 }}>
-                        <Text style={styles.subLabel}>Seuil bas</Text>
-                        <TextInput
-                          value={v.threshold}
-                          onChangeText={(t) => {
-                            const next = [...draft.variants];
-                            next[i] = { ...next[i], threshold: t.replace(/[^0-9]/g, "") };
-                            setDraft({ ...draft, variants: next });
-                          }}
-                          placeholder="5"
-                          placeholderTextColor={colors.muted}
-                          keyboardType="number-pad"
-                          style={styles.input}
-                          testID={`draft-variant-threshold-${i}`}
-                        />
-                      </View>
-                    </View>
                   </View>
                 ))}
                 <Pressable
-                  onPress={() => setDraft({ ...draft, variants: [...draft.variants, { label: "", price: "", stock: "", threshold: "" }] })}
+                  onPress={() => setDraft({ ...draft, variants: [...draft.variants, { label: "", price: "" }] })}
                   style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: spacing.sm }}
                   testID="draft-variant-add"
                 >
                   <Ionicons name="add-circle-outline" size={20} color={colors.brand} />
                   <Text style={{ color: colors.brand, fontWeight: "700" }}>Ajouter un poids</Text>
                 </Pressable>
+              </View>
+
+              {/* Inventory (shared gram-stock) */}
+              <View style={{ gap: spacing.sm }}>
+                <Text style={[styles.label, { fontSize: font.base, fontWeight: "800", color: colors.onSurface }]}>
+                  Stock physique
+                </Text>
+                <Text style={{ color: colors.muted, fontSize: font.sm }}>
+                  Indiquez le stock total disponible en grammes. La rupture de chaque variante s&apos;adapte automatiquement.
+                </Text>
+                <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={styles.subLabel}>Stock total (g)</Text>
+                    <TextInput
+                      value={draft.total_stock_grams}
+                      onChangeText={(t) => setDraft({ ...draft, total_stock_grams: t.replace(/[^0-9.,]/g, "") })}
+                      placeholder="Illimité"
+                      placeholderTextColor={colors.muted}
+                      keyboardType="decimal-pad"
+                      style={styles.input}
+                      testID="draft-total-stock-grams"
+                    />
+                  </View>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={styles.subLabel}>Seuil bas (g)</Text>
+                    <TextInput
+                      value={draft.low_stock_threshold_grams}
+                      onChangeText={(t) => setDraft({ ...draft, low_stock_threshold_grams: t.replace(/[^0-9.,]/g, "") })}
+                      placeholder="5"
+                      placeholderTextColor={colors.muted}
+                      keyboardType="decimal-pad"
+                      style={styles.input}
+                      testID="draft-low-stock-threshold-grams"
+                    />
+                  </View>
+                </View>
               </View>
 
               <View style={styles.switchRow}>

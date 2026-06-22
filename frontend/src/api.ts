@@ -11,6 +11,7 @@ export type Category = {
 export type WeightVariant = {
   label: string;
   price: number;
+  grams?: number | null;
   stock?: number | null;
   low_stock_threshold?: number | null;
 };
@@ -27,6 +28,8 @@ export type Product = {
   popular?: boolean;
   promo?: boolean;
   variants?: WeightVariant[];
+  total_stock_grams?: number | null;
+  low_stock_threshold_grams?: number | null;
 };
 
 export function minVariantPrice(p: Product): number {

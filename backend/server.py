@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import re
 import secrets
 import logging
 from pathlib import Path
@@ -59,8 +60,9 @@ class Category(BaseModel):
 class WeightVariant(BaseModel):
     label: str  # "1 g", "5 g", "10 g"…
     price: float
-    stock: Optional[int] = None  # None = unlimited; otherwise current available units
-    low_stock_threshold: Optional[int] = None  # None → use DEFAULT_LOW_STOCK_THRESHOLD
+    grams: Optional[float] = None  # auto-derived from label if missing
+    stock: Optional[int] = None  # legacy per-variant stock (None = unlimited)
+    low_stock_threshold: Optional[int] = None  # legacy per-variant threshold
 
 
 class PromoCode(BaseModel):
@@ -121,6 +123,58 @@ class Product(BaseModel):
     popular: bool = False
     promo: bool = False
     variants: List[WeightVariant] = []
+    # Shared inventory in grams (preferred for cannabis-style products).
+    # When set, variant availability is computed by comparing variant.grams against
+    # total_stock_grams. Individual variant.stock fields are then ignored.
+    total_stock_grams: Optional[float] = None
+    low_stock_threshold_grams: Optional[float] = None
+
+
+_GRAM_LABEL_RE = re.compile(r"([\d]+(?:[.,][\d]+)?)\s*g", re.IGNORECASE)
+
+
+def variant_grams(v: dict) -> Optional[float]:
+    """Resolve a variant's gram weight: explicit field first, fallback to label parsing."""
+    if v is None:
+        return None
+    g = v.get("grams")
+    if isinstance(g, (int, float)) and g > 0:
+        return float(g)
+    label = (v.get("label") or "").strip()
+    if not label:
+        return None
+    m = _GRAM_LABEL_RE.search(label)
+    if not m:
+        return None
+    try:
+        return float(m.group(1).replace(",", "."))
+    except Exception:
+        return None
+
+
+def variant_available(product: dict, v: dict, requested_qty: int = 1) -> bool:
+    """Whether a variant is currently buyable for the requested quantity."""
+    total = product.get("total_stock_grams")
+    grams = variant_grams(v)
+    # Gram-based shared stock has priority when set
+    if total is not None and grams is not None and grams > 0:
+        needed = grams * max(1, requested_qty)
+        return float(total) >= needed
+    # Fallback to per-variant stock (legacy)
+    stock = v.get("stock")
+    if stock is None:
+        return True
+    return int(stock) >= max(1, requested_qty)
+
+
+def product_low_threshold_grams(product: dict) -> float:
+    raw = product.get("low_stock_threshold_grams")
+    if raw is None:
+        return float(DEFAULT_LOW_STOCK_THRESHOLD)
+    try:
+        return float(raw)
+    except Exception:
+        return float(DEFAULT_LOW_STOCK_THRESHOLD)
 
 
 def min_variant_price(product: dict) -> float:
@@ -457,19 +511,42 @@ async def create_order(payload: OrderIn, request: Request):
     for it in payload.items:
         key = (it.product_id, it.variant_label or None)
         req_map[key] = req_map.get(key, 0) + max(1, int(it.quantity))
-    # Validate stock availability
+    # Aggregate gram demand per product (for shared-stock products)
+    grams_req_by_product: dict[str, float] = {}
     for (pid, label), qty in req_map.items():
+        p = product_map.get(pid)
+        if not p or not label:
+            continue
+        v = find_variant(p, label)
+        if not v:
+            continue
+        g = variant_grams(v)
+        if g and g > 0 and p.get("total_stock_grams") is not None:
+            grams_req_by_product[pid] = grams_req_by_product.get(pid, 0.0) + (g * qty)
+    # Validate gram-stock availability (shared product-level stock)
+    for pid, needed in grams_req_by_product.items():
         p = product_map.get(pid)
         if not p:
             continue
-        if not label:
+        total = float(p.get("total_stock_grams") or 0)
+        if needed > total + 1e-6:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Stock insuffisant pour « {p['name']} » : il reste {total:g} g, il en faudrait {needed:g} g.",
+            )
+    # Validate per-variant fallback stock (only when product has no gram-stock)
+    for (pid, label), qty in req_map.items():
+        p = product_map.get(pid)
+        if not p or not label:
             continue
+        if p.get("total_stock_grams") is not None:
+            continue  # handled above
         v = find_variant(p, label)
         if not v:
             continue
         stock = v.get("stock")
         if stock is None:
-            continue  # unlimited
+            continue
         if int(stock) <= 0:
             raise HTTPException(status_code=409, detail=f"« {p['name']} ({label}) » est en rupture de stock.")
         if int(stock) < qty:
@@ -537,14 +614,31 @@ async def create_order(payload: OrderIn, request: Request):
     )
     await db.orders.insert_one(order.dict())
 
-    # Decrement stock for tracked variants and collect low-stock warnings
+    # Decrement stock and collect low-stock warnings
     low_stock_alerts: list[dict] = []
+    # 1) Gram-based product stock
+    for pid, needed_g in grams_req_by_product.items():
+        product = await db.products.find_one({"id": pid}, {"_id": 0})
+        if not product or product.get("total_stock_grams") is None:
+            continue
+        before = float(product.get("total_stock_grams") or 0)
+        after = max(0.0, before - float(needed_g))
+        await db.products.update_one({"id": pid}, {"$set": {"total_stock_grams": after}})
+        thr = product_low_threshold_grams(product)
+        if (after <= thr and before > thr) or (after == 0 and before > 0):
+            low_stock_alerts.append({
+                "name": product.get("name"),
+                "label": f"{after:g} g restants",
+                "remaining": int(after),
+                "out_of_stock": after == 0,
+            })
+    # 2) Legacy per-variant stock for tracked variants on products without shared gram stock
     for (pid, label), qty in req_map.items():
         if not label:
             continue
         product = await db.products.find_one({"id": pid}, {"_id": 0})
-        if not product:
-            continue
+        if not product or product.get("total_stock_grams") is not None:
+            continue  # gram-based path handled above
         variants = list(product.get("variants") or [])
         changed = False
         for v in variants:
@@ -556,7 +650,6 @@ async def create_order(payload: OrderIn, request: Request):
                 thr = v.get("low_stock_threshold")
                 if thr is None:
                     thr = DEFAULT_LOW_STOCK_THRESHOLD
-                # Trigger alert if we crossed the threshold or are at zero
                 if after <= int(thr) and before > int(thr) or (after == 0 and before > 0):
                     low_stock_alerts.append({
                         "name": product.get("name"),
@@ -1303,7 +1396,8 @@ async def admin_update_order(order_id: str, payload: OrderStatusUpdate, _admin: 
 
 
 async def _restock_order_items(items: list) -> None:
-    """Add back order quantities to the corresponding variants."""
+    """Add back order quantities to the corresponding variants/product."""
+    # Aggregate by (pid, label) and by product for gram-stock
     agg: dict[tuple[str, str], int] = {}
     for it in items or []:
         label = it.get("variant_label")
@@ -1314,19 +1408,43 @@ async def _restock_order_items(items: list) -> None:
         if qty <= 0:
             continue
         agg[(pid, label)] = agg.get((pid, label), 0) + qty
+    # Handle products one-by-one to choose the right strategy
+    seen_products: dict[str, dict] = {}
+    for (pid, _), _ in agg.items():
+        if pid not in seen_products:
+            doc = await db.products.find_one({"id": pid}, {"_id": 0})
+            if doc:
+                seen_products[pid] = doc
+
+    grams_to_add: dict[str, float] = {}
     for (pid, label), qty in agg.items():
-        product = await db.products.find_one({"id": pid}, {"_id": 0})
+        product = seen_products.get(pid)
         if not product:
             continue
-        variants = list(product.get("variants") or [])
-        changed = False
-        for v in variants:
-            if v.get("label") == label and v.get("stock") is not None:
-                v["stock"] = int(v["stock"]) + qty
-                changed = True
-                break
-        if changed:
-            await db.products.update_one({"id": pid}, {"$set": {"variants": variants}})
+        if product.get("total_stock_grams") is not None:
+            v = find_variant(product, label)
+            if v:
+                g = variant_grams(v)
+                if g and g > 0:
+                    grams_to_add[pid] = grams_to_add.get(pid, 0.0) + (g * qty)
+        else:
+            variants = list(product.get("variants") or [])
+            changed = False
+            for v in variants:
+                if v.get("label") == label and v.get("stock") is not None:
+                    v["stock"] = int(v["stock"]) + qty
+                    changed = True
+                    break
+            if changed:
+                await db.products.update_one({"id": pid}, {"$set": {"variants": variants}})
+                seen_products[pid]["variants"] = variants
+    # Apply gram restocks
+    for pid, g in grams_to_add.items():
+        product = seen_products.get(pid)
+        if not product:
+            continue
+        cur = float(product.get("total_stock_grams") or 0)
+        await db.products.update_one({"id": pid}, {"$set": {"total_stock_grams": cur + g}})
 
 
 async def _decrement_order_items(items: list) -> None:
@@ -1340,19 +1458,41 @@ async def _decrement_order_items(items: list) -> None:
         if qty <= 0:
             continue
         agg[(pid, label)] = agg.get((pid, label), 0) + qty
+    seen_products: dict[str, dict] = {}
+    for (pid, _), _ in agg.items():
+        if pid not in seen_products:
+            doc = await db.products.find_one({"id": pid}, {"_id": 0})
+            if doc:
+                seen_products[pid] = doc
+
+    grams_to_sub: dict[str, float] = {}
     for (pid, label), qty in agg.items():
-        product = await db.products.find_one({"id": pid}, {"_id": 0})
+        product = seen_products.get(pid)
         if not product:
             continue
-        variants = list(product.get("variants") or [])
-        changed = False
-        for v in variants:
-            if v.get("label") == label and v.get("stock") is not None:
-                v["stock"] = max(0, int(v["stock"]) - qty)
-                changed = True
-                break
-        if changed:
-            await db.products.update_one({"id": pid}, {"$set": {"variants": variants}})
+        if product.get("total_stock_grams") is not None:
+            v = find_variant(product, label)
+            if v:
+                g = variant_grams(v)
+                if g and g > 0:
+                    grams_to_sub[pid] = grams_to_sub.get(pid, 0.0) + (g * qty)
+        else:
+            variants = list(product.get("variants") or [])
+            changed = False
+            for v in variants:
+                if v.get("label") == label and v.get("stock") is not None:
+                    v["stock"] = max(0, int(v["stock"]) - qty)
+                    changed = True
+                    break
+            if changed:
+                await db.products.update_one({"id": pid}, {"$set": {"variants": variants}})
+                seen_products[pid]["variants"] = variants
+    for pid, g in grams_to_sub.items():
+        product = seen_products.get(pid)
+        if not product:
+            continue
+        cur = float(product.get("total_stock_grams") or 0)
+        await db.products.update_one({"id": pid}, {"$set": {"total_stock_grams": max(0.0, cur - g)}})
 
 
 @api_router.delete("/admin/orders/{order_id}")
