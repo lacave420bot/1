@@ -36,7 +36,7 @@ export default function SettingsScreen() {
     {
       id: "about",
       label: "À propos",
-      sub: "Verte Vallée CBD · v1.0.0",
+      sub: "La Cave 420 · v1.0.0",
       icon: "information-circle",
       iconBg: "#1A1A2E",
       iconFg: "#B19CFF",

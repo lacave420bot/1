@@ -165,7 +165,7 @@ export default function HomeScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.topGreet}>Bonsoir</Text>
-            <Text style={styles.topBrand}>Verte Vallée</Text>
+            <Text style={styles.topBrand}>La Cave 420</Text>
           </View>
           <Pressable
             style={styles.iconBtn}
