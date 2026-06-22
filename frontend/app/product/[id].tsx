@@ -65,11 +65,19 @@ export default function ProductDetailScreen() {
   const handleAdd = () => {
     const v = product.variants && product.variants.length > 0 ? product.variants[variantIdx] : null;
     if (!v) return;
+    if (v.stock != null && v.stock <= 0) return; // out of stock
     addItem(product, v.label, v.price, qty);
     router.back();
   };
   const currentVariant = product?.variants && product.variants.length > 0 ? product.variants[variantIdx] : null;
   const displayPrice = currentVariant ? currentVariant.price : product?.price ?? 0;
+
+  // Stock status for the currently selected variant
+  const variantStock = currentVariant?.stock ?? null;
+  const variantThreshold = currentVariant?.low_stock_threshold ?? 5;
+  const isOutOfStock = variantStock !== null && variantStock <= 0;
+  const isLowStock = variantStock !== null && variantStock > 0 && variantStock <= variantThreshold;
+  const maxQty = variantStock !== null ? Math.max(1, variantStock) : 999;
 
   return (
     <View style={styles.root} testID="product-screen">
@@ -102,6 +110,18 @@ export default function ProductDetailScreen() {
           {product.promo && (
             <View style={styles.promoBadge}>
               <Text style={styles.promoBadgeText}>Offre spéciale</Text>
+            </View>
+          )}
+          {isOutOfStock && (
+            <View style={[styles.stockBadge, styles.stockBadgeOut]} testID="product-stock-out">
+              <Ionicons name="close-circle" size={14} color="#FCA5A5" />
+              <Text style={[styles.stockBadgeText, { color: "#FCA5A5" }]}>Rupture de stock</Text>
+            </View>
+          )}
+          {isLowStock && !isOutOfStock && (
+            <View style={[styles.stockBadge, styles.stockBadgeLow]} testID="product-stock-low">
+              <Ionicons name="flash" size={14} color="#FBBF24" />
+              <Text style={[styles.stockBadgeText, { color: "#FBBF24" }]}>Stock limité</Text>
             </View>
           )}
           {product.variants && product.variants.length > 0 && (
@@ -137,18 +157,24 @@ export default function ProductDetailScreen() {
           </Pressable>
           <Text style={styles.stepperQty} testID="product-qty">{qty}</Text>
           <Pressable
-            style={styles.stepperBtn}
-            onPress={() => setQty((q) => q + 1)}
+            style={[styles.stepperBtn, qty >= maxQty && { opacity: 0.4 }]}
+            onPress={() => setQty((q) => Math.min(maxQty, q + 1))}
             hitSlop={6}
+            disabled={qty >= maxQty}
             testID="product-inc"
           >
             <Ionicons name="add" size={18} color={colors.onSurface} />
           </Pressable>
         </View>
-        <Pressable style={styles.addBtn} onPress={handleAdd} testID="product-add-btn">
-          <Ionicons name="bag-add" size={18} color="#fff" />
+        <Pressable
+          style={[styles.addBtn, isOutOfStock && styles.addBtnDisabled]}
+          onPress={handleAdd}
+          disabled={isOutOfStock}
+          testID="product-add-btn"
+        >
+          <Ionicons name={isOutOfStock ? "ban" : "bag-add"} size={18} color="#fff" />
           <Text style={styles.addBtnText}>
-            Ajouter · {formatPrice(displayPrice * qty)}
+            {isOutOfStock ? "Rupture" : `Ajouter · ${formatPrice(displayPrice * qty)}`}
           </Text>
         </Pressable>
       </View>
@@ -248,6 +274,20 @@ const styles = StyleSheet.create({
     ...shadows.floating,
   },
   addBtnText: { color: "#fff", fontWeight: "700", fontSize: font.lg },
+  addBtnDisabled: { backgroundColor: "#7F1D1D", opacity: 0.85 },
+  stockBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  stockBadgeOut: { backgroundColor: "#3F1414", borderColor: "#7F1D1D" },
+  stockBadgeLow: { backgroundColor: "#2A1F0E", borderColor: "#8B6914" },
+  stockBadgeText: { fontSize: font.sm, fontWeight: "700" },
   errorText: { color: colors.error, fontSize: font.base },
   retryBtn: {
     backgroundColor: colors.brand,

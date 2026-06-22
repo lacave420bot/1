@@ -21,6 +21,7 @@ load_dotenv(ROOT_DIR / '.env')
 
 ORDER_STATUSES = ["En cours", "Terminée"]
 ADMIN_STATUS_CHOICES = ["En cours", "Terminée", "Annulée"]
+DEFAULT_LOW_STOCK_THRESHOLD = 5
 
 
 def compute_status(created_at_iso: str) -> str:
@@ -57,6 +58,8 @@ class Category(BaseModel):
 class WeightVariant(BaseModel):
     label: str  # "1 g", "5 g", "10 g"…
     price: float
+    stock: Optional[int] = None  # None = unlimited; otherwise current available units
+    low_stock_threshold: Optional[int] = None  # None → use DEFAULT_LOW_STOCK_THRESHOLD
 
 
 class PromoCode(BaseModel):
@@ -393,6 +396,32 @@ async def create_order(payload: OrderIn):
     products = await db.products.find({"id": {"$in": product_ids}}, {"_id": 0}).to_list(500)
     product_map = {p["id"]: p for p in products}
 
+    # First pass: aggregate requested quantities per (product, variant) to check stock
+    req_map: dict[tuple[str, Optional[str]], int] = {}
+    for it in payload.items:
+        key = (it.product_id, it.variant_label or None)
+        req_map[key] = req_map.get(key, 0) + max(1, int(it.quantity))
+    # Validate stock availability
+    for (pid, label), qty in req_map.items():
+        p = product_map.get(pid)
+        if not p:
+            continue
+        if not label:
+            continue
+        v = find_variant(p, label)
+        if not v:
+            continue
+        stock = v.get("stock")
+        if stock is None:
+            continue  # unlimited
+        if int(stock) <= 0:
+            raise HTTPException(status_code=409, detail=f"« {p['name']} ({label}) » est en rupture de stock.")
+        if int(stock) < qty:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Stock insuffisant pour « {p['name']} ({label}) » : plus que {int(stock)} disponible{'s' if int(stock) > 1 else ''}.",
+            )
+
     order_items: List[OrderItem] = []
     subtotal = 0.0
     for it in payload.items:
@@ -450,10 +479,47 @@ async def create_order(payload: OrderIn):
     )
     await db.orders.insert_one(order.dict())
 
+    # Decrement stock for tracked variants and collect low-stock warnings
+    low_stock_alerts: list[dict] = []
+    for (pid, label), qty in req_map.items():
+        if not label:
+            continue
+        product = await db.products.find_one({"id": pid}, {"_id": 0})
+        if not product:
+            continue
+        variants = list(product.get("variants") or [])
+        changed = False
+        for v in variants:
+            if v.get("label") == label and v.get("stock") is not None:
+                before = int(v["stock"])
+                after = max(0, before - qty)
+                v["stock"] = after
+                changed = True
+                thr = v.get("low_stock_threshold")
+                if thr is None:
+                    thr = DEFAULT_LOW_STOCK_THRESHOLD
+                # Trigger alert if we crossed the threshold or are at zero
+                if after <= int(thr) and before > int(thr) or (after == 0 and before > 0):
+                    low_stock_alerts.append({
+                        "name": product.get("name"),
+                        "label": label,
+                        "remaining": after,
+                        "out_of_stock": after == 0,
+                    })
+                break
+        if changed:
+            await db.products.update_one({"id": pid}, {"$set": {"variants": variants}})
+
     try:
         await send_telegram_order_notification(order)
     except Exception as e:
         logger.warning("[telegram] outer error: %s", e)
+
+    if low_stock_alerts:
+        try:
+            await send_low_stock_alert(low_stock_alerts)
+        except Exception as e:
+            logger.warning("[telegram] low-stock alert error: %s", e)
 
     return order
 
@@ -557,6 +623,40 @@ async def send_telegram_order_notification(order: Order) -> None:
                 logger.warning("[telegram] non-200 (%s): %s", r.status_code, r.text[:300])
     except Exception as e:
         logger.warning("[telegram] error: %s", e)
+
+
+async def send_low_stock_alert(alerts: list[dict]) -> None:
+    """Send a Telegram message to the admin when one or more variants
+    crossed their low-stock threshold or just went out of stock."""
+    if not alerts:
+        return
+    token, chat_id = await _get_telegram_config()
+    if not token or not chat_id:
+        return
+    lines = ["⚠️ <b>Alerte stock</b>"]
+    for a in alerts:
+        name = _esc(a.get("name") or "")
+        label = _esc(a.get("label") or "")
+        remaining = int(a.get("remaining", 0))
+        if a.get("out_of_stock") or remaining == 0:
+            lines.append(f"  ❌ <b>{name} ({label})</b> — en rupture")
+        else:
+            unit_s = "" if remaining > 1 else ""
+            lines.append(f"  🟠 <b>{name} ({label})</b> — plus que {remaining} restant{unit_s}")
+    text = "\n".join(lines)
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client_h:
+            await client_h.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={
+                    "chat_id": chat_id,
+                    "text": text,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True,
+                },
+            )
+    except Exception as e:
+        logger.warning("[telegram] low-stock send error: %s", e)
 
 
 class TelegramConfigIn(BaseModel):
@@ -854,14 +954,81 @@ async def admin_list_orders(_admin: dict = Depends(require_admin)):
 async def admin_update_order(order_id: str, payload: OrderStatusUpdate, _admin: dict = Depends(require_admin)):
     if payload.status not in ADMIN_STATUS_CHOICES:
         raise HTTPException(status_code=400, detail=f"Statut invalide. Choix : {', '.join(ADMIN_STATUS_CHOICES)}")
-    result = await db.orders.update_one(
+
+    before_doc = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not before_doc:
+        raise HTTPException(status_code=404, detail="Commande introuvable")
+    prev_status = with_status(dict(before_doc)).get("status")
+
+    await db.orders.update_one(
         {"id": order_id},
         {"$set": {"manual_status": payload.status}},
     )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Commande introuvable")
+
+    new_status = payload.status
+
+    # Restock items when an order transitions INTO "Annulée"
+    if new_status == "Annulée" and prev_status != "Annulée":
+        await _restock_order_items(before_doc.get("items") or [])
+    # Re-decrement items if an order is UN-cancelled (back to active state)
+    elif prev_status == "Annulée" and new_status != "Annulée":
+        await _decrement_order_items(before_doc.get("items") or [])
+
     updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
     return with_status(updated)
+
+
+async def _restock_order_items(items: list) -> None:
+    """Add back order quantities to the corresponding variants."""
+    agg: dict[tuple[str, str], int] = {}
+    for it in items or []:
+        label = it.get("variant_label")
+        pid = it.get("product_id")
+        if not label or not pid:
+            continue
+        qty = int(it.get("quantity") or 0)
+        if qty <= 0:
+            continue
+        agg[(pid, label)] = agg.get((pid, label), 0) + qty
+    for (pid, label), qty in agg.items():
+        product = await db.products.find_one({"id": pid}, {"_id": 0})
+        if not product:
+            continue
+        variants = list(product.get("variants") or [])
+        changed = False
+        for v in variants:
+            if v.get("label") == label and v.get("stock") is not None:
+                v["stock"] = int(v["stock"]) + qty
+                changed = True
+                break
+        if changed:
+            await db.products.update_one({"id": pid}, {"$set": {"variants": variants}})
+
+
+async def _decrement_order_items(items: list) -> None:
+    agg: dict[tuple[str, str], int] = {}
+    for it in items or []:
+        label = it.get("variant_label")
+        pid = it.get("product_id")
+        if not label or not pid:
+            continue
+        qty = int(it.get("quantity") or 0)
+        if qty <= 0:
+            continue
+        agg[(pid, label)] = agg.get((pid, label), 0) + qty
+    for (pid, label), qty in agg.items():
+        product = await db.products.find_one({"id": pid}, {"_id": 0})
+        if not product:
+            continue
+        variants = list(product.get("variants") or [])
+        changed = False
+        for v in variants:
+            if v.get("label") == label and v.get("stock") is not None:
+                v["stock"] = max(0, int(v["stock"]) - qty)
+                changed = True
+                break
+        if changed:
+            await db.products.update_one({"id": pid}, {"$set": {"variants": variants}})
 
 
 @api_router.delete("/admin/orders/{order_id}")

@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -19,6 +20,19 @@ import { api, type Order } from "@/src/api";
 import { formatPrice } from "@/src/store/cart";
 import { useAdmin } from "@/src/store/admin";
 import { colors, font, radius, shadows, spacing } from "@/src/theme";
+
+// Cross-platform confirmation: native Alert on iOS/Android, window.confirm on web.
+function confirmAction(title: string, message: string, onConfirm: () => void, confirmLabel: string = "Supprimer") {
+  if (Platform.OS === "web") {
+    const ok = typeof window !== "undefined" && window.confirm(`${title}\n\n${message}`);
+    if (ok) onConfirm();
+    return;
+  }
+  Alert.alert(title, message, [
+    { text: "Annuler", style: "cancel" },
+    { text: confirmLabel, style: "destructive", onPress: onConfirm },
+  ]);
+}
 
 const STATUS_CHOICES = ["En cours", "Terminée", "Annulée"] as const;
 
@@ -177,51 +191,35 @@ export default function AdminOrdersScreen() {
   const confirmBulkDelete = () => {
     const n = selectedIds.size;
     if (n === 0) return;
-    Alert.alert(
+    confirmAction(
       `Supprimer ${n} commande${n > 1 ? "s" : ""} ?`,
       "Cette action est définitive.",
-      [
-        { text: "Annuler", style: "cancel" },
-        { text: "Supprimer", style: "destructive", onPress: performBulkDelete },
-      ],
+      performBulkDelete,
     );
   };
 
   const confirmDeleteOne = (order: Order) => {
-    Alert.alert(
+    confirmAction(
       `Supprimer #${order.id.slice(0, 8).toUpperCase()} ?`,
       "Cette action est définitive.",
-      [
-        { text: "Annuler", style: "cancel" },
-        {
-          text: "Supprimer",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await api.adminDeleteOrder(order.id);
-              setOrders((prev) => prev.filter((o) => o.id !== order.id));
-              setSelected(null);
-            } catch (e: any) {
-              Alert.alert("Erreur", e?.message || "Suppression échouée");
-            }
-          },
-        },
-      ],
+      async () => {
+        try {
+          await api.adminDeleteOrder(order.id);
+          setOrders((prev) => prev.filter((o) => o.id !== order.id));
+          setSelected(null);
+        } catch (e: any) {
+          Alert.alert("Erreur", e?.message || "Suppression échouée");
+        }
+      },
     );
   };
 
   const confirmCancel = (order: Order) => {
-    Alert.alert(
+    confirmAction(
       "Annuler la commande ?",
       `La commande #${order.id.slice(0, 8).toUpperCase()} de ${order.customer_name} sera marquée comme annulée.`,
-      [
-        { text: "Retour", style: "cancel" },
-        {
-          text: "Annuler la commande",
-          style: "destructive",
-          onPress: () => updateStatus("Annulée"),
-        },
-      ],
+      () => updateStatus("Annulée"),
+      "Annuler la commande",
     );
   };
 

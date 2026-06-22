@@ -8,7 +8,12 @@ export type Category = {
   kind: "restaurant" | "grocery";
 };
 
-export type WeightVariant = { label: string; price: number };
+export type WeightVariant = {
+  label: string;
+  price: number;
+  stock?: number | null;
+  low_stock_threshold?: number | null;
+};
 
 export type Product = {
   id: string;

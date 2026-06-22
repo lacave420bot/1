@@ -34,7 +34,7 @@ type Draft = {
   unit: string;
   popular: boolean;
   promo: boolean;
-  variants: { label: string; price: string }[];
+  variants: { label: string; price: string; stock: string; threshold: string }[];
 };
 
 const EMPTY: Draft = {
@@ -49,12 +49,12 @@ const EMPTY: Draft = {
   variants: [],
 };
 
-const DEFAULT_VARIANTS_PRESET = [
-  { label: "1 g", price: "9" },
-  { label: "5 g", price: "40" },
-  { label: "10 g", price: "75" },
-  { label: "25 g", price: "175" },
-  { label: "50 g", price: "320" },
+const DEFAULT_VARIANTS_PRESET: { label: string; price: string; stock: string; threshold: string }[] = [
+  { label: "1 g", price: "9", stock: "", threshold: "" },
+  { label: "5 g", price: "40", stock: "", threshold: "" },
+  { label: "10 g", price: "75", stock: "", threshold: "" },
+  { label: "25 g", price: "175", stock: "", threshold: "" },
+  { label: "50 g", price: "320", stock: "", threshold: "" },
 ];
 
 export default function AdminProductsScreen() {
@@ -194,7 +194,12 @@ export default function AdminProductsScreen() {
       unit: p.unit || "",
       popular: !!p.popular,
       promo: !!p.promo,
-      variants: (p.variants || []).map((v) => ({ label: v.label, price: String(v.price) })),
+      variants: (p.variants || []).map((v) => ({
+        label: v.label,
+        price: String(v.price),
+        stock: v.stock == null ? "" : String(v.stock),
+        threshold: v.low_stock_threshold == null ? "" : String(v.low_stock_threshold),
+      })),
     });
     setErr(null);
     setModalOpen(true);
@@ -211,7 +216,12 @@ export default function AdminProductsScreen() {
       unit: p.unit || "",
       popular: !!p.popular,
       promo: !!p.promo,
-      variants: (p.variants || []).map((v) => ({ label: v.label, price: String(v.price) })),
+      variants: (p.variants || []).map((v) => ({
+        label: v.label,
+        price: String(v.price),
+        stock: v.stock == null ? "" : String(v.stock),
+        threshold: v.low_stock_threshold == null ? "" : String(v.low_stock_threshold),
+      })),
     });
     setErr(null);
     setModalOpen(true);
@@ -232,7 +242,16 @@ export default function AdminProductsScreen() {
       setErr(null);
       const variants = draft.variants
         .filter((v) => v.label.trim() && v.price.trim())
-        .map((v) => ({ label: v.label.trim(), price: parseFloat(v.price.replace(",", ".")) || 0 }));
+        .map((v) => {
+          const stockTrim = (v.stock || "").trim();
+          const thrTrim = (v.threshold || "").trim();
+          return {
+            label: v.label.trim(),
+            price: parseFloat(v.price.replace(",", ".")) || 0,
+            stock: stockTrim === "" ? null : Math.max(0, parseInt(stockTrim, 10) || 0),
+            low_stock_threshold: thrTrim === "" ? null : Math.max(0, parseInt(thrTrim, 10) || 0),
+          };
+        });
       const body = {
         name: draft.name.trim(),
         description: draft.description.trim(),
@@ -448,45 +467,84 @@ export default function AdminProductsScreen() {
                     <Text style={{ color: colors.brand, fontWeight: "700", fontSize: font.sm }}>Préréglage CBD</Text>
                   </Pressable>
                 </View>
+                <Text style={{ color: colors.muted, fontSize: font.sm }}>
+                  Stock vide = illimité. Seuil = alerte stock bas (défaut : 5).
+                </Text>
                 {draft.variants.map((v, i) => (
-                  <View key={i} style={{ flexDirection: "row", gap: spacing.sm, alignItems: "center" }}>
-                    <TextInput
-                      value={v.label}
-                      onChangeText={(t) => {
-                        const next = [...draft.variants];
-                        next[i] = { ...next[i], label: t };
-                        setDraft({ ...draft, variants: next });
-                      }}
-                      placeholder="1 g"
-                      placeholderTextColor={colors.muted}
-                      style={[styles.input, { flex: 1 }]}
-                      testID={`draft-variant-label-${i}`}
-                    />
-                    <TextInput
-                      value={v.price}
-                      onChangeText={(t) => {
-                        const next = [...draft.variants];
-                        next[i] = { ...next[i], price: t };
-                        setDraft({ ...draft, variants: next });
-                      }}
-                      placeholder="9.00"
-                      placeholderTextColor={colors.muted}
-                      keyboardType="decimal-pad"
-                      style={[styles.input, { width: 90 }]}
-                      testID={`draft-variant-price-${i}`}
-                    />
-                    <Pressable
-                      onPress={() => setDraft({ ...draft, variants: draft.variants.filter((_, idx) => idx !== i) })}
-                      style={styles.iconBtn}
-                      testID={`draft-variant-del-${i}`}
-                      hitSlop={6}
-                    >
-                      <Ionicons name="trash-outline" size={16} color={colors.error} />
-                    </Pressable>
+                  <View key={i} style={styles.variantBlock}>
+                    <View style={{ flexDirection: "row", gap: spacing.sm, alignItems: "center" }}>
+                      <TextInput
+                        value={v.label}
+                        onChangeText={(t) => {
+                          const next = [...draft.variants];
+                          next[i] = { ...next[i], label: t };
+                          setDraft({ ...draft, variants: next });
+                        }}
+                        placeholder="1 g"
+                        placeholderTextColor={colors.muted}
+                        style={[styles.input, { flex: 1 }]}
+                        testID={`draft-variant-label-${i}`}
+                      />
+                      <TextInput
+                        value={v.price}
+                        onChangeText={(t) => {
+                          const next = [...draft.variants];
+                          next[i] = { ...next[i], price: t };
+                          setDraft({ ...draft, variants: next });
+                        }}
+                        placeholder="9.00"
+                        placeholderTextColor={colors.muted}
+                        keyboardType="decimal-pad"
+                        style={[styles.input, { width: 90 }]}
+                        testID={`draft-variant-price-${i}`}
+                      />
+                      <Pressable
+                        onPress={() => setDraft({ ...draft, variants: draft.variants.filter((_, idx) => idx !== i) })}
+                        style={styles.iconBtn}
+                        testID={`draft-variant-del-${i}`}
+                        hitSlop={6}
+                      >
+                        <Ionicons name="trash-outline" size={16} color={colors.error} />
+                      </Pressable>
+                    </View>
+                    <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={styles.subLabel}>Stock</Text>
+                        <TextInput
+                          value={v.stock}
+                          onChangeText={(t) => {
+                            const next = [...draft.variants];
+                            next[i] = { ...next[i], stock: t.replace(/[^0-9]/g, "") };
+                            setDraft({ ...draft, variants: next });
+                          }}
+                          placeholder="Illimité"
+                          placeholderTextColor={colors.muted}
+                          keyboardType="number-pad"
+                          style={styles.input}
+                          testID={`draft-variant-stock-${i}`}
+                        />
+                      </View>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={styles.subLabel}>Seuil bas</Text>
+                        <TextInput
+                          value={v.threshold}
+                          onChangeText={(t) => {
+                            const next = [...draft.variants];
+                            next[i] = { ...next[i], threshold: t.replace(/[^0-9]/g, "") };
+                            setDraft({ ...draft, variants: next });
+                          }}
+                          placeholder="5"
+                          placeholderTextColor={colors.muted}
+                          keyboardType="number-pad"
+                          style={styles.input}
+                          testID={`draft-variant-threshold-${i}`}
+                        />
+                      </View>
+                    </View>
                   </View>
                 ))}
                 <Pressable
-                  onPress={() => setDraft({ ...draft, variants: [...draft.variants, { label: "", price: "" }] })}
+                  onPress={() => setDraft({ ...draft, variants: [...draft.variants, { label: "", price: "", stock: "", threshold: "" }] })}
                   style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: spacing.sm }}
                   testID="draft-variant-add"
                 >
@@ -562,6 +620,15 @@ const styles = StyleSheet.create({
   cancelText: { color: colors.muted, fontWeight: "600" },
   saveBtn: { flex: 2, height: 48, borderRadius: radius.pill, backgroundColor: colors.brand, alignItems: "center", justifyContent: "center" },
   saveText: { color: "#fff", fontWeight: "700", fontSize: font.base },
+  subLabel: { color: colors.muted, fontSize: font.xs, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.4 },
+  variantBlock: {
+    gap: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
 
   imagePreviewBox: {
     width: "100%",
