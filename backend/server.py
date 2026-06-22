@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 import uuid
 import bcrypt
+import httpx
+import html as html_lib
 import jwt as pyjwt
 from datetime import datetime, timezone, timedelta
 
@@ -103,7 +105,7 @@ class OrderIn(BaseModel):
     guest_id: str
     customer_name: str
     address: str
-    phone: str
+    phone: str = ""
     notes: Optional[str] = ""
     items: List[CartItemIn]
     use_points: float = 0.0
@@ -405,6 +407,13 @@ async def create_order(payload: OrderIn):
         },
         upsert=True,
     )
+
+    # Fire-and-forget Telegram notification (does not block the response on failure)
+    try:
+        await send_telegram_order_notification(order)
+    except Exception as e:
+        logger.warning("[telegram] outer error: %s", e)
+
     return order
 
 
@@ -428,6 +437,70 @@ async def get_order(order_id: str):
     if not item:
         raise HTTPException(status_code=404, detail="Commande introuvable")
     return with_status(item)
+
+
+# ====================================================================
+# TELEGRAM NOTIFICATIONS (fire-and-forget on new orders)
+# ====================================================================
+
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+
+
+def _esc(s) -> str:
+    return html_lib.escape(str(s or ""), quote=False)
+
+
+def _format_order_html(order: Order) -> str:
+    lines = [
+        f"🛒 <b>Nouvelle commande</b> #{_esc(order.id[:8].upper())}",
+        f"👤 <b>{_esc(order.customer_name)}</b>" + (f" · {_esc(order.phone)}" if order.phone else ""),
+        f"📍 {_esc(order.address)}",
+        "",
+        "<b>📦 Articles :</b>",
+    ]
+    for it in order.items:
+        variant = f" ({_esc(it.variant_label)})" if it.variant_label else ""
+        line_total = it.price * it.quantity
+        lines.append(f"  • {it.quantity}× {_esc(it.name)}{variant} — {line_total:.2f} €".replace(".", ","))
+    lines.append("")
+    lines.append(f"💰 Sous-total : <b>{order.subtotal:.2f} €</b>".replace(".", ","))
+    if order.points_used > 0:
+        lines.append(f"🎁 Fidélité utilisée : −{order.points_used:.2f} €".replace(".", ","))
+    lines.append(f"✅ <b>Total : {order.total:.2f} €</b>".replace(".", ","))
+    if order.notes:
+        lines.append("")
+        lines.append(f"📝 <i>Notes :</i> {_esc(order.notes)}")
+    if order.points_earned > 0:
+        lines.append(f"⭐ Gain fidélité client : +{order.points_earned:.2f} €".replace(".", ","))
+    try:
+        dt = datetime.fromisoformat(order.created_at)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        lines.append(f"🕐 {dt.strftime('%d/%m/%Y à %H:%M')}")
+    except Exception:
+        pass
+    return "\n".join(lines)
+
+
+async def send_telegram_order_notification(order: Order) -> None:
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        logger.info("[telegram] skip: bot token or chat id not configured")
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": _format_order_html(order),
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client_h:
+            r = await client_h.post(url, json=payload)
+            if r.status_code != 200:
+                logger.warning("[telegram] non-200 (%s): %s", r.status_code, r.text[:300])
+    except Exception as e:
+        logger.warning("[telegram] error: %s", e)
 
 
 # ====================================================================
@@ -507,7 +580,6 @@ async def migrate_variants():
             {"label": "25 g", "price": 200.0},
         ],
     }
-    GENERIC = [{"label": "1 pièce", "price": 0.0}]
     cursor = db.products.find({"$or": [{"variants": {"$exists": False}}, {"variants": {"$size": 0}}]}, {"_id": 0})
     async for prod in cursor:
         base_price = float(prod.get("price", 0))

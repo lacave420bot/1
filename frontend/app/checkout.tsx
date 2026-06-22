@@ -43,7 +43,7 @@ export default function CheckoutScreen() {
   const total = Math.round(discountedSubtotal * 100) / 100;
   const pointsToEarn = Math.floor(discountedSubtotal / 10);
 
-  const canSubmit = name.trim() && phone.trim() && address.trim() && items.length > 0;
+  const canSubmit = name.trim() && address.trim() && items.length > 0;
 
   const submit = async () => {
     if (!canSubmit) {
@@ -149,7 +149,7 @@ export default function CheckoutScreen() {
               />
             </View>
             <View style={styles.field}>
-              <Text style={styles.label}>Téléphone</Text>
+              <Text style={styles.label}>Téléphone (facultatif)</Text>
               <TextInput
                 value={phone}
                 onChangeText={setPhone}
