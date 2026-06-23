@@ -1022,6 +1022,9 @@ def _order_action_keyboard(order_id: str, current_status: str, delivery_mode: st
         ])
     elif cur == "En préparation":
         rows.append([
+            {"text": "⏰ Définir l'heure estimée", "callback_data": f"eta:{order_id}"},
+        ])
+        rows.append([
             {"text": f"{final_emoji} {final_label}", "callback_data": f"s:{order_id}:{final_code}"},
         ])
         rows.append([
@@ -1039,6 +1042,23 @@ def _order_action_keyboard(order_id: str, current_status: str, delivery_mode: st
         ])
 
     return {"inline_keyboard": rows}
+
+
+def _eta_choice_keyboard(order_id: str) -> dict:
+    """Sub-keyboard for selecting estimated ready time (preset durations from now)."""
+    return {"inline_keyboard": [
+        [
+            {"text": "⏰ +15 min", "callback_data": f"eta:{order_id}:15"},
+            {"text": "⏰ +30 min", "callback_data": f"eta:{order_id}:30"},
+        ],
+        [
+            {"text": "⏰ +45 min", "callback_data": f"eta:{order_id}:45"},
+            {"text": "⏰ +1 h", "callback_data": f"eta:{order_id}:60"},
+        ],
+        [
+            {"text": "↩️ Annuler", "callback_data": f"eta:{order_id}:cancel"},
+        ],
+    ]}
 
 
 # Compact codes <-> full status mapping for Telegram callback_data (≤64 bytes)
@@ -2080,10 +2100,83 @@ async def telegram_webhook(request: Request):
         return {"ok": True}
 
     # Compact format: s:{order_id}:{code}  (preferred — fits Telegram's 64-byte limit)
+    # ETA format: eta:{order_id} (show duration sub-menu)
+    #             eta:{order_id}:{minutes|cancel} (apply duration or back out)
     # Legacy formats kept for backward compatibility:
     #   set_status:{order_id}:{status}  (long form)
     #   done|cancel|reopen:{order_id}
     parts = data.split(":", 2)
+
+    # ETA sub-flow: opening the sub-menu (no duration specified)
+    if parts[0] == "eta" and len(parts) == 2:
+        eta_order_id = parts[1]
+        eta_order = await db.orders.find_one({"id": eta_order_id}, {"_id": 0})
+        if not eta_order:
+            await _telegram_answer_callback(cb_id, "Commande introuvable.")
+            return {"ok": True}
+        token, _ = await _get_telegram_config()
+        msg_id = eta_order.get("telegram_message_id")
+        chat_id_msg = eta_order.get("telegram_chat_id")
+        if token and msg_id and chat_id_msg:
+            try:
+                async with httpx.AsyncClient(timeout=8.0) as cli:
+                    await cli.post(
+                        f"https://api.telegram.org/bot{token}/editMessageReplyMarkup",
+                        json={
+                            "chat_id": chat_id_msg,
+                            "message_id": msg_id,
+                            "reply_markup": _eta_choice_keyboard(eta_order_id),
+                        },
+                    )
+            except Exception as e:
+                logger.warning("[telegram] open eta menu error: %s", e)
+        await _telegram_answer_callback(cb_id, "⏰ Choisissez la durée estimée")
+        return {"ok": True}
+
+    # ETA sub-flow: applying a duration (or cancelling)
+    if parts[0] == "eta" and len(parts) == 3:
+        eta_order_id = parts[1]
+        choice = parts[2]
+        eta_doc = await db.orders.find_one({"id": eta_order_id}, {"_id": 0})
+        if not eta_doc:
+            await _telegram_answer_callback(cb_id, "Commande introuvable.")
+            return {"ok": True}
+        prev_eta = eta_doc.get("estimated_ready_time")
+
+        if choice == "cancel":
+            # Just restore the main keyboard for current status
+            try:
+                await _telegram_edit_order_message(Order(**with_status(eta_doc)))
+            except Exception as e:
+                logger.warning("[telegram] eta cancel restore: %s", e)
+            await _telegram_answer_callback(cb_id, "Annulé.")
+            return {"ok": True}
+
+        try:
+            minutes = int(choice)
+        except ValueError:
+            await _telegram_answer_callback(cb_id, "Durée invalide.")
+            return {"ok": True}
+
+        eta_dt = datetime.now() + timedelta(minutes=minutes)
+        eta_str = eta_dt.strftime("%H:%M")
+        await db.orders.update_one(
+            {"id": eta_order_id},
+            {"$set": {"estimated_ready_time": eta_str}},
+        )
+        updated_doc = await db.orders.find_one({"id": eta_order_id}, {"_id": 0})
+        updated_order = Order(**with_status(updated_doc))
+        try:
+            await send_customer_eta_dm(updated_order, is_update=bool(prev_eta))
+        except Exception as e:
+            logger.warning("[telegram] eta dm on webhook: %s", e)
+        try:
+            await _telegram_edit_order_message(updated_order)
+        except Exception as e:
+            logger.warning("[telegram] eta edit on webhook: %s", e)
+        await _telegram_answer_callback(cb_id, f"⏰ Heure estimée : {eta_str}")
+        return {"ok": True}
+
     target_status: str | None = None
     order_id: str | None = None
     if parts[0] == "s" and len(parts) == 3:

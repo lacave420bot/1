@@ -4,6 +4,8 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -34,7 +36,7 @@ function formatDate(iso: string): string {
 export default function OrdersScreen() {
   const router = useRouter();
   const { guestId, ready } = useCart();
-  const { isAuthenticated, user } = useUser();
+  const { isAuthenticated, user, signOut } = useUser();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -68,7 +70,7 @@ export default function OrdersScreen() {
             {isAuthenticated && user ? `Connecté · ${user.name || ""}` : "Historique de cet appareil"}
           </Text>
         </View>
-        {!isAuthenticated && (
+        {!isAuthenticated ? (
           <Pressable
             style={styles.loginBtn}
             onPress={() => router.push("/login")}
@@ -77,6 +79,34 @@ export default function OrdersScreen() {
           >
             <Ionicons name="paper-plane" size={14} color="#2AABEE" />
             <Text style={styles.loginBtnText}>Connexion</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            style={styles.logoutBtn}
+            onPress={() => {
+              const doLogout = async () => {
+                await signOut();
+              };
+              if (Platform.OS === "web") {
+                if (typeof window !== "undefined" && window.confirm("Se déconnecter de ton compte ?")) {
+                  doLogout();
+                }
+              } else {
+                Alert.alert(
+                  "Déconnexion",
+                  "Se déconnecter de ton compte ?",
+                  [
+                    { text: "Annuler", style: "cancel" },
+                    { text: "Se déconnecter", style: "destructive", onPress: doLogout },
+                  ],
+                );
+              }
+            }}
+            testID="orders-logout"
+            hitSlop={8}
+          >
+            <Ionicons name="log-out-outline" size={14} color="#FCA5A5" />
+            <Text style={styles.logoutBtnText}>Déconnexion</Text>
           </Pressable>
         )}
         <Pressable
@@ -239,6 +269,19 @@ const styles = StyleSheet.create({
     marginRight: spacing.xs,
   },
   loginBtnText: { color: "#2AABEE", fontWeight: "700", fontSize: font.sm },
+  logoutBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(252,165,165,0.10)",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: "rgba(252,165,165,0.30)",
+    marginRight: spacing.sm,
+  },
+  logoutBtnText: { color: "#FCA5A5", fontWeight: "700", fontSize: font.sm },
   center: {
     flex: 1,
     alignItems: "center",
