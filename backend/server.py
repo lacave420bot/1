@@ -593,9 +593,10 @@ async def create_order(payload: OrderIn, request: Request):
             continue
         total = float(p.get("total_stock_grams") or 0)
         if needed > total + 1e-6:
+            unit = p.get("stock_unit") or "g"
             raise HTTPException(
                 status_code=409,
-                detail=f"Stock insuffisant pour « {p['name']} » : il reste {total:g} g, il en faudrait {needed:g} g.",
+                detail=f"Stock insuffisant pour « {p['name']} » : il reste {total:g} {unit}, il en faudrait {needed:g} {unit}.",
             )
     # Validate per-variant fallback stock (only when product has no gram-stock)
     for (pid, label), qty in req_map.items():
@@ -703,7 +704,7 @@ async def create_order(payload: OrderIn, request: Request):
         if (after <= thr and before > thr) or (after == 0 and before > 0):
             low_stock_alerts.append({
                 "name": product.get("name"),
-                "label": f"{after:g} g restants",
+                "label": f"{after:g} {product.get('stock_unit') or 'g'} restants",
                 "remaining": int(after),
                 "out_of_stock": after == 0,
             })
@@ -1893,7 +1894,7 @@ async def _restock_order_items(items: list) -> list[dict]:
         await db.products.update_one({"id": pid}, {"$set": {"total_stock_grams": after}})
         restored_alerts.append({
             "name": product.get("name"),
-            "label": f"{after:g} g",
+            "label": f"{after:g} {product.get('stock_unit') or 'g'}",
             "remaining": int(after),
         })
     return restored_alerts

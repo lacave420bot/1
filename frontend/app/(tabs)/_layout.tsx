@@ -30,7 +30,9 @@ function CartTabIcon({
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
-  const bottomPadding = Math.max(insets.bottom, Platform.OS === "android" ? 8 : 4);
+  const bottomPadding = Platform.OS === "web"
+    ? 8
+    : Math.max(insets.bottom, Platform.OS === "android" ? 8 : 4);
   return (
     <Tabs
       screenOptions={{

@@ -154,7 +154,13 @@ export default function ProductDetailScreen() {
           )}
           {product.variants && product.variants.length > 0 && (
             <View style={{ gap: 8 }}>
-              <Text style={styles.sectionLabel}>Choisir le poids</Text>
+              <Text style={styles.sectionLabel}>
+                {product.stock_unit === "unité"
+                  ? "Choisir la quantité"
+                  : product.stock_unit === "ml" || product.stock_unit === "L"
+                  ? "Choisir le volume"
+                  : "Choisir le poids"}
+              </Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
                 {product.variants.map((v, i) => {
                   const active = i === variantIdx;
