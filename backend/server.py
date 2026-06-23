@@ -1068,7 +1068,7 @@ async def _telegram_edit_order_message(order: Order) -> None:
     new_text = _format_order_html(order) + status_line
     try:
         async with httpx.AsyncClient(timeout=8.0) as client_h:
-            await client_h.post(
+            r = await client_h.post(
                 f"https://api.telegram.org/bot{token}/editMessageText",
                 json={
                     "chat_id": chat_id,
@@ -1079,6 +1079,16 @@ async def _telegram_edit_order_message(order: Order) -> None:
                     "reply_markup": _order_action_keyboard(order.id, cur, order.delivery_mode or "delivery"),
                 },
             )
+            if r.status_code != 200:
+                # "message is not modified" is harmless — Telegram returns 400 in that case
+                try:
+                    desc = r.json().get("description", "")
+                except Exception:
+                    desc = r.text[:300]
+                if "not modified" in desc.lower():
+                    logger.info("[telegram] edit skipped (not modified)")
+                else:
+                    logger.warning("[telegram] edit non-200 (%s): %s", r.status_code, desc)
     except Exception as e:
         logger.warning("[telegram] edit error: %s", e)
 
@@ -1861,20 +1871,22 @@ async def admin_test_telegram(mode: str = "pickup", _admin: dict = Depends(requi
 
     delivery_mode = "pickup" if (mode or "").lower() == "pickup" else "delivery"
 
-    # Build a synthetic order
+    # Build a synthetic order with the correct OrderItem field names
     test_items = [
         OrderItem(
             product_id="test-product-1",
-            product_name="🌿 Fleur Test (Skywalker OG)",
+            name="🌿 Fleur Test (Skywalker OG)",
             variant_label="3 g",
-            unit_price=24.00,
+            price=24.00,
+            image="",
             quantity=1,
         ),
         OrderItem(
             product_id="test-product-2",
-            product_name="🍪 Cookie Test (Brownie THC<0,3%)",
+            name="🍪 Cookie Test (Brownie THC<0,3%)",
             variant_label="1 pièce",
-            unit_price=6.50,
+            price=6.50,
+            image="",
             quantity=2,
         ),
     ]
@@ -1887,7 +1899,7 @@ async def admin_test_telegram(mode: str = "pickup", _admin: dict = Depends(requi
         delivery_mode=delivery_mode,
         notes="Commande de test générée depuis l'admin — peut être annulée.",
         subtotal=37.00,
-        discount=0.0,
+        discount_amount=0.0,
         total=37.00,
         status="En cours",
     )
