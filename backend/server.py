@@ -1894,7 +1894,7 @@ async def _restock_order_items(items: list) -> list[dict]:
         restored_alerts.append({
             "name": product.get("name"),
             "label": f"{after:g} g",
-            "remaining": f"{after:g}",
+            "remaining": int(after),
         })
     return restored_alerts
 
