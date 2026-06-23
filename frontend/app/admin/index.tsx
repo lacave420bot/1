@@ -117,7 +117,7 @@ export default function AdminIndex() {
             >
               <View style={styles.statHeader}>
                 <Ionicons name="time" size={16} color="#FBBF24" />
-                <Text style={styles.statLabel}>En attente</Text>
+                <Text style={styles.statLabel} numberOfLines={1}>En attente</Text>
               </View>
               <Text style={[styles.statValue, styles.statValueSmall]} testID="stat-pending">
                 {stats ? `${stats.pending_orders}` : "—"}
@@ -130,7 +130,7 @@ export default function AdminIndex() {
             >
               <View style={styles.statHeader}>
                 <Ionicons name="alert-circle" size={16} color="#FCA5A5" />
-                <Text style={styles.statLabel}>Rupture</Text>
+                <Text style={styles.statLabel} numberOfLines={1}>Rupture</Text>
               </View>
               <Text style={[styles.statValue, styles.statValueSmall]} testID="stat-out-of-stock">
                 {stats ? `${stats.out_of_stock_products}` : "—"}
@@ -143,7 +143,7 @@ export default function AdminIndex() {
             >
               <View style={styles.statHeader}>
                 <Ionicons name="warning" size={16} color="#FB923C" />
-                <Text style={styles.statLabel}>Stock bas</Text>
+                <Text style={styles.statLabel} numberOfLines={1}>Stock bas</Text>
               </View>
               <Text style={[styles.statValue, styles.statValueSmall]} testID="stat-low-stock">
                 {stats ? `${stats.low_stock_variants}` : "—"}
@@ -156,7 +156,7 @@ export default function AdminIndex() {
             >
               <View style={styles.statHeader}>
                 <Ionicons name="rocket" size={16} color="#A78BFA" />
-                <Text style={styles.statLabel}>À venir</Text>
+                <Text style={styles.statLabel} numberOfLines={1}>À venir</Text>
               </View>
               <Text style={[styles.statValue, styles.statValueSmall]} testID="stat-coming-soon">
                 {stats ? `${stats.coming_soon_products}` : "—"}
@@ -240,10 +240,16 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     flexBasis: "30%",
     flexGrow: 1,
+    minWidth: 92,
   },
-  statCardWide: { flexBasis: "47%" },
-  statHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
-  statLabel: { color: colors.muted, fontSize: font.xs, fontWeight: "600" },
+  statCardWide: { flexBasis: "47%", minWidth: 140 },
+  statHeader: { flexDirection: "row", alignItems: "center", gap: 4, flexWrap: "nowrap" },
+  statLabel: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "600",
+    flexShrink: 1,
+  },
   statValue: { color: colors.onSurface, fontSize: font.lg, fontWeight: "800", fontVariant: ["tabular-nums"] },
   statValueSmall: { fontSize: font.xl, textAlign: "center" },
 

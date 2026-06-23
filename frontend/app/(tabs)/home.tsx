@@ -285,7 +285,7 @@ export default function HomeScreen() {
                   >
                     <Image source={{ uri: item.image }} style={styles.popularImage} contentFit="cover" />
                     <View style={styles.popularBody}>
-                      <Text style={styles.productTitle} numberOfLines={1}>
+                      <Text style={styles.productTitle} numberOfLines={2}>
                         {item.name}
                       </Text>
                       <Text style={styles.productDesc} numberOfLines={1}>
@@ -798,7 +798,7 @@ function ProductCarousel({
                   </View>
                 </View>
                 <View style={styles.popularBody}>
-                  <Text style={styles.productTitle} numberOfLines={1}>
+                  <Text style={styles.productTitle} numberOfLines={2}>
                     {item.name}
                   </Text>
                   <Text style={styles.productDesc} numberOfLines={1}>

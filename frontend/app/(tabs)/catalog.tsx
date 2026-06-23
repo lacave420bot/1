@@ -18,7 +18,11 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { api, type Category, type Product, minVariantPrice } from "@/src/api";
 import { AnimatedPressable } from "@/src/components/AnimatedPressable";
 import { useCart, formatPrice } from "@/src/store/cart";
+import { storage } from "@/src/utils/storage";
 import { colors, font, radius, shadows, spacing } from "@/src/theme";
+
+type ViewMode = "grid" | "list";
+const VIEW_MODE_KEY = "catalog_view_mode_v1";
 
 export default function CatalogScreen() {
   const router = useRouter();
@@ -31,6 +35,21 @@ export default function CatalogScreen() {
   const [error, setError] = useState<string | null>(null);
   const [selectedCat, setSelectedCat] = useState<string>(params.category_id || "all");
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
+
+  // Load persisted view-mode preference
+  useEffect(() => {
+    (async () => {
+      const saved = await storage.getItem<ViewMode | null>(VIEW_MODE_KEY, null);
+      if (saved === "grid" || saved === "list") setViewMode(saved);
+    })();
+  }, []);
+
+  const toggleViewMode = () => {
+    const next: ViewMode = viewMode === "grid" ? "list" : "grid";
+    setViewMode(next);
+    storage.setItem(VIEW_MODE_KEY, next).catch(() => {});
+  };
 
   useEffect(() => {
     (async () => {
@@ -91,7 +110,25 @@ export default function CatalogScreen() {
     <SafeAreaView style={styles.safe} edges={["top"]} testID="catalog-screen">
       {/* Sticky header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Catalogue</Text>
+        <View style={styles.headerTopRow}>
+          <Text style={styles.headerTitle}>Catalogue</Text>
+          <AnimatedPressable
+            style={styles.viewToggle}
+            scale={0.93}
+            haptic="light"
+            onPress={toggleViewMode}
+            testID="catalog-view-toggle"
+          >
+            <Ionicons
+              name={viewMode === "grid" ? "list" : "grid"}
+              size={18}
+              color={colors.onSurface}
+            />
+            <Text style={styles.viewToggleText}>
+              {viewMode === "grid" ? "Liste" : "Grille"}
+            </Text>
+          </AnimatedPressable>
+        </View>
         <View style={styles.searchBox}>
           <Ionicons name="search" size={18} color={colors.muted} />
           <TextInput
@@ -139,63 +176,103 @@ export default function CatalogScreen() {
         </View>
       ) : (
         <FlatList
+          key={viewMode /* Force re-mount when numColumns changes */}
           data={filtered}
           keyExtractor={(item) => item.id}
-          numColumns={2}
-          columnWrapperStyle={{ gap: spacing.md, paddingHorizontal: spacing.lg }}
+          numColumns={viewMode === "grid" ? 2 : 1}
+          columnWrapperStyle={
+            viewMode === "grid"
+              ? { gap: spacing.md, paddingHorizontal: spacing.lg }
+              : undefined
+          }
           contentContainerStyle={{
             paddingTop: spacing.md,
             paddingBottom: count > 0 ? 120 : spacing.xl,
             gap: spacing.md,
+            ...(viewMode === "list" ? { paddingHorizontal: spacing.lg } : null),
           }}
-          renderItem={({ item, index }) => (
-            <Animated.View entering={FadeInDown.duration(380).delay(Math.min(index, 8) * 40).springify().damping(18)}>
-              <AnimatedPressable
-                style={styles.card}
-                scale={0.97}
-                onPress={() => router.push(`/product/${item.id}`)}
-                testID={`catalog-product-${item.id}`}
+          renderItem={({ item, index }) => {
+            const hasStrike =
+              item.promo &&
+              typeof item.original_price === "number" &&
+              item.original_price > minVariantPrice(item);
+            return (
+              <Animated.View
+                entering={FadeInDown.duration(380)
+                  .delay(Math.min(index, 8) * 40)
+                  .springify()
+                  .damping(18)}
               >
-              <Image source={{ uri: item.image }} style={styles.cardImage} contentFit="cover" />
-              {item.coming_soon ? (
-                <View style={styles.comingSoonTag}>
-                  <Text style={styles.comingSoonText}>🚧 À venir</Text>
-                </View>
-              ) : item.promo ? (
-                <View style={styles.promoTag}>
-                  <Text style={styles.promoTagText}>Promo</Text>
-                </View>
-              ) : null}
-              <View style={styles.cardBody}>
-                <Text style={styles.cardTitle} numberOfLines={1}>
-                  {item.name}
-                </Text>
-                {item.unit ? (
-                  <Text style={styles.cardUnit}>{item.unit}</Text>
-                ) : (
-                  <Text style={styles.cardUnit} numberOfLines={1}>
-                    {item.description}
-                  </Text>
-                )}
-                <View style={styles.cardFooter}>
-                  {item.coming_soon ? (
-                    <Text style={[styles.cardPriceFrom, { color: "#A78BFA" }]}>Bientôt disponible</Text>
-                  ) : (
-                    <View style={styles.priceCol}>
-                      {item.promo && typeof item.original_price === "number" && item.original_price > minVariantPrice(item) && (
-                        <Text style={styles.cardStrike}>{formatPrice(item.original_price)}</Text>
-                      )}
-                      <Text style={[styles.cardPriceFrom, item.promo && styles.cardPricePromo]}>
-                        dès {formatPrice(minVariantPrice(item))}
+                <AnimatedPressable
+                  style={viewMode === "grid" ? styles.card : styles.listCard}
+                  scale={0.97}
+                  onPress={() => router.push(`/product/${item.id}`)}
+                  testID={`catalog-product-${item.id}`}
+                >
+                  <View
+                    style={
+                      viewMode === "grid"
+                        ? styles.cardImageWrap
+                        : styles.listImageWrap
+                    }
+                  >
+                    <Image
+                      source={{ uri: item.image }}
+                      style={viewMode === "grid" ? styles.cardImage : styles.listImage}
+                      contentFit="cover"
+                    />
+                    {item.coming_soon ? (
+                      <View style={styles.comingSoonTag}>
+                        <Text style={styles.comingSoonText}>🚧 À venir</Text>
+                      </View>
+                    ) : item.promo ? (
+                      <View style={styles.promoTag}>
+                        <Text style={styles.promoTagText}>Promo</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <View
+                    style={[
+                      styles.cardBody,
+                      viewMode === "list" && styles.listCardBody,
+                    ]}
+                  >
+                    <Text style={styles.cardTitle} numberOfLines={viewMode === "list" ? 2 : 1}>
+                      {item.name}
+                    </Text>
+                    {item.unit ? (
+                      <Text style={styles.cardUnit} numberOfLines={1}>{item.unit}</Text>
+                    ) : (
+                      <Text style={styles.cardUnit} numberOfLines={viewMode === "list" ? 2 : 1}>
+                        {item.description}
                       </Text>
+                    )}
+                    <View style={styles.cardFooter}>
+                      {item.coming_soon ? (
+                        <Text style={[styles.cardPriceFrom, { color: "#A78BFA" }]} numberOfLines={1}>
+                          Bientôt disponible
+                        </Text>
+                      ) : (
+                        <View style={styles.priceCol}>
+                          {hasStrike && (
+                            <Text style={styles.cardStrike}>
+                              {formatPrice(item.original_price!)}
+                            </Text>
+                          )}
+                          <Text
+                            style={[styles.cardPriceFrom, item.promo && styles.cardPricePromo]}
+                          >
+                            dès {formatPrice(minVariantPrice(item))}
+                          </Text>
+                        </View>
+                      )}
+                      <Ionicons name="chevron-forward" size={18} color={colors.muted} />
                     </View>
-                  )}
-                  <Ionicons name="chevron-forward" size={18} color={colors.muted} />
-                </View>
-              </View>
-            </AnimatedPressable>
-            </Animated.View>
-          )}
+                  </View>
+                </AnimatedPressable>
+              </Animated.View>
+            );
+          }}
         />
       )}
 
@@ -237,11 +314,32 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.divider,
   },
+  headerTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.md,
+  },
   headerTitle: {
     fontSize: font.xxl,
     fontWeight: "700",
     color: colors.onSurface,
-    marginBottom: spacing.md,
+  },
+  viewToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  viewToggleText: {
+    color: colors.onSurface,
+    fontSize: font.sm,
+    fontWeight: "700",
   },
   searchBox: {
     flexDirection: "row",
@@ -276,7 +374,20 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     ...shadows.card,
   },
+  cardImageWrap: { position: "relative" },
   cardImage: { width: "100%", height: 130 },
+
+  // List-mode card (horizontal layout)
+  listCard: {
+    flexDirection: "row",
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.lg,
+    overflow: "hidden",
+    ...shadows.card,
+  },
+  listImageWrap: { position: "relative" },
+  listImage: { width: 110, height: 110 },
+  listCardBody: { flex: 1, justifyContent: "space-between" },
   promoTag: {
     position: "absolute",
     top: spacing.sm,
