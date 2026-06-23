@@ -79,6 +79,7 @@ class Category(BaseModel):
     icon: str  # ionicons name
     image: str
     kind: str  # "restaurant" | "grocery"
+    sort_order: int = 0  # admin-controlled display order (0 = top)
 
 
 class WeightVariant(BaseModel):
@@ -147,19 +148,33 @@ class Product(BaseModel):
     popular: bool = False
     promo: bool = False
     coming_soon: bool = False  # "À venir" toggle — hides add-to-cart and shows badge
+    sort_order: int = 0  # admin-controlled display order (0 = top)
     variants: List[WeightVariant] = []
     # Shared inventory in grams (preferred for cannabis-style products).
     # When set, variant availability is computed by comparing variant.grams against
     # total_stock_grams. Individual variant.stock fields are then ignored.
     total_stock_grams: Optional[float] = None
     low_stock_threshold_grams: Optional[float] = None
+    # Stock unit label: "g" (grammes, default), "ml", "L" (litres), "unité"
+    stock_unit: str = "g"
+    # Original price (used to display strikethrough when promo=true)
+    original_price: Optional[float] = None
+    # Initial stock — captured each time admin sets/restocks total_stock_grams.
+    # Used to derive "low stock" (< 20% of initial) on the home screen.
+    initial_stock_grams: Optional[float] = None
 
 
 _GRAM_LABEL_RE = re.compile(r"([\d]+(?:[.,][\d]+)?)\s*g", re.IGNORECASE)
+# Fallback: parse the leading number from any unit label ("1 L", "0.5 L", "5 unités", etc.)
+_LEADING_NUM_RE = re.compile(r"^\s*([\d]+(?:[.,][\d]+)?)")
 
 
 def variant_grams(v: dict) -> Optional[float]:
-    """Resolve a variant's gram weight: explicit field first, fallback to label parsing."""
+    """Resolve a variant's gram weight: explicit field first, fallback to label parsing.
+
+    The field is named `grams` for legacy reasons but stores the variant's amount
+    in the product's `stock_unit` (g / ml / L / unité).
+    """
     if v is None:
         return None
     g = v.get("grams")
@@ -168,7 +183,11 @@ def variant_grams(v: dict) -> Optional[float]:
     label = (v.get("label") or "").strip()
     if not label:
         return None
+    # Prefer the "X g" pattern (legacy behavior) when present
     m = _GRAM_LABEL_RE.search(label)
+    if not m:
+        # Fall back to the first number in the label (handles L, ml, unité…)
+        m = _LEADING_NUM_RE.search(label)
     if not m:
         return None
     try:
@@ -479,7 +498,7 @@ async def root():
 
 @api_router.get("/categories", response_model=List[Category])
 async def list_categories():
-    items = await db.categories.find({}, {"_id": 0}).to_list(100)
+    items = await db.categories.find({}, {"_id": 0}).sort([("sort_order", 1), ("name", 1)]).to_list(100)
     return items
 
 
@@ -502,7 +521,7 @@ async def list_products(
         query["promo"] = promo
     if search:
         query["name"] = {"$regex": search, "$options": "i"}
-    items = await db.products.find(query, {"_id": 0}).to_list(500)
+    items = await db.products.find(query, {"_id": 0}).sort([("sort_order", 1), ("name", 1)]).to_list(500)
     return items
 
 
@@ -639,6 +658,18 @@ async def create_order(payload: OrderIn, request: Request):
         total=total,
     )
     await db.orders.insert_one(order.dict())
+
+    # Award loyalty points: 1€ per 10€ spent (rounded down)
+    try:
+        points_earned = int(total // 10)
+        if points_earned > 0:
+            await db.loyalty.update_one(
+                {"guest_id": order.guest_id},
+                {"$inc": {"points_balance": float(points_earned)}, "$setOnInsert": {"guest_id": order.guest_id}},
+                upsert=True,
+            )
+    except Exception as e:
+        logger.warning("[loyalty] award points err: %s", e)
 
     # Decrement stock and collect low-stock warnings
     low_stock_alerts: list[dict] = []
@@ -1505,6 +1536,10 @@ class ProductIn(BaseModel):
     promo: bool = False
     coming_soon: bool = False
     variants: List[WeightVariant] = []
+    total_stock_grams: Optional[float] = None
+    low_stock_threshold_grams: Optional[float] = None
+    stock_unit: Optional[str] = None  # "g", "ml", "L", "unité"
+    original_price: Optional[float] = None
 
 
 class ProductPatch(BaseModel):
@@ -1519,11 +1554,19 @@ class ProductPatch(BaseModel):
     promo: Optional[bool] = None
     coming_soon: Optional[bool] = None
     variants: Optional[List[WeightVariant]] = None
+    total_stock_grams: Optional[float] = None
+    low_stock_threshold_grams: Optional[float] = None
+    stock_unit: Optional[str] = None
+    original_price: Optional[float] = None
 
 
 @api_router.post("/admin/products", response_model=Product)
 async def admin_create_product(payload: ProductIn, _admin: dict = Depends(require_admin)):
-    product = Product(**payload.dict())
+    data = payload.dict()
+    # Capture initial stock for "low stock" computation (20% threshold).
+    if data.get("total_stock_grams") is not None:
+        data["initial_stock_grams"] = float(data["total_stock_grams"])
+    product = Product(**data)
     await db.products.insert_one(product.dict())
     return product
 
@@ -1533,6 +1576,13 @@ async def admin_update_product(product_id: str, payload: ProductPatch, _admin: d
     update = {k: v for k, v in payload.dict(exclude_unset=True).items()}
     if not update:
         raise HTTPException(status_code=400, detail="Aucun champ à mettre à jour")
+    # When admin explicitly sets/restocks total_stock_grams via the form,
+    # treat it as a fresh "initial" baseline so the 20% low-stock threshold resets.
+    if "total_stock_grams" in update:
+        if update["total_stock_grams"] is None:
+            update["initial_stock_grams"] = None
+        else:
+            update["initial_stock_grams"] = float(update["total_stock_grams"])
     result = await db.products.update_one({"id": product_id}, {"$set": update})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Produit introuvable")
@@ -1599,6 +1649,26 @@ async def admin_delete_category(category_id: str, _admin: dict = Depends(require
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Catégorie introuvable")
     return {"status": "ok"}
+
+
+class ReorderPayload(BaseModel):
+    ids: List[str]
+
+
+@api_router.put("/admin/categories/reorder")
+async def admin_reorder_categories(payload: ReorderPayload, _admin: dict = Depends(require_admin)):
+    """Persist a new display order for categories. `ids` is the full ordered list."""
+    for idx, cat_id in enumerate(payload.ids):
+        await db.categories.update_one({"id": cat_id}, {"$set": {"sort_order": idx}})
+    return {"status": "ok", "count": len(payload.ids)}
+
+
+@api_router.put("/admin/products/reorder")
+async def admin_reorder_products(payload: ReorderPayload, _admin: dict = Depends(require_admin)):
+    """Persist a new display order for products. `ids` is the full ordered list."""
+    for idx, prod_id in enumerate(payload.ids):
+        await db.products.update_one({"id": prod_id}, {"$set": {"sort_order": idx}})
+    return {"status": "ok", "count": len(payload.ids)}
 
 
 # ---------------- Admin: Orders ----------------

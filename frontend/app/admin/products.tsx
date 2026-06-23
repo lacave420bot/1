@@ -20,7 +20,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { api, type Category, type Product } from "@/src/api";
+import { api, type Category, type Product, STOCK_UNITS } from "@/src/api";
 import { useAdmin } from "@/src/store/admin";
 import { colors, font, radius, shadows, spacing } from "@/src/theme";
 
@@ -38,6 +38,8 @@ type Draft = {
   variants: { label: string; price: string }[];
   total_stock_grams: string;
   low_stock_threshold_grams: string;
+  stock_unit: string;
+  original_price: string;
 };
 
 const EMPTY: Draft = {
@@ -53,6 +55,8 @@ const EMPTY: Draft = {
   variants: [],
   total_stock_grams: "",
   low_stock_threshold_grams: "",
+  stock_unit: "g",
+  original_price: "",
 };
 
 const DEFAULT_VARIANTS_PRESET: { label: string; price: string }[] = [
@@ -230,6 +234,8 @@ export default function AdminProductsScreen() {
       })),
       total_stock_grams: p.total_stock_grams == null ? "" : String(p.total_stock_grams),
       low_stock_threshold_grams: p.low_stock_threshold_grams == null ? "" : String(p.low_stock_threshold_grams),
+      stock_unit: p.stock_unit || "g",
+      original_price: p.original_price == null ? "" : String(p.original_price),
     });
     setErr(null);
     setModalOpen(true);
@@ -253,6 +259,8 @@ export default function AdminProductsScreen() {
       })),
       total_stock_grams: p.total_stock_grams == null ? "" : String(p.total_stock_grams),
       low_stock_threshold_grams: p.low_stock_threshold_grams == null ? "" : String(p.low_stock_threshold_grams),
+      stock_unit: p.stock_unit || "g",
+      original_price: p.original_price == null ? "" : String(p.original_price),
     });
     setErr(null);
     setModalOpen(true);
@@ -279,6 +287,7 @@ export default function AdminProductsScreen() {
         }));
       const totalG = draft.total_stock_grams.trim();
       const thrG = draft.low_stock_threshold_grams.trim();
+      const origPrice = draft.original_price.trim();
       const body = {
         name: draft.name.trim(),
         description: draft.description.trim(),
@@ -292,6 +301,10 @@ export default function AdminProductsScreen() {
         variants,
         total_stock_grams: totalG === "" ? null : Math.max(0, parseFloat(totalG.replace(",", ".")) || 0),
         low_stock_threshold_grams: thrG === "" ? null : Math.max(0, parseFloat(thrG.replace(",", ".")) || 0),
+        stock_unit: draft.stock_unit || "g",
+        original_price: !draft.promo || origPrice === ""
+          ? null
+          : Math.max(0, parseFloat(origPrice.replace(",", ".")) || 0),
       };
       if (draft.id) {
         await api.adminUpdateProduct(draft.id, body);
@@ -583,11 +596,30 @@ export default function AdminProductsScreen() {
                   Stock physique
                 </Text>
                 <Text style={{ color: colors.muted, fontSize: font.sm }}>
-                  Indiquez le stock total disponible en grammes. La rupture de chaque variante s&apos;adapte automatiquement.
+                  Indiquez le stock total disponible dans l&apos;unité choisie. La rupture de chaque variante s&apos;adapte automatiquement.
                 </Text>
+                {/* Stock unit selector */}
+                <View style={{ gap: 4 }}>
+                  <Text style={styles.subLabel}>Unité de stock</Text>
+                  <View style={{ flexDirection: "row", gap: spacing.sm, flexWrap: "wrap" }}>
+                    {STOCK_UNITS.map((u) => {
+                      const active = draft.stock_unit === u;
+                      return (
+                        <Pressable
+                          key={u}
+                          style={[styles.chip, active && styles.chipActive]}
+                          onPress={() => setDraft({ ...draft, stock_unit: u })}
+                          testID={`draft-stock-unit-${u}`}
+                        >
+                          <Text style={[styles.chipText, active && styles.chipTextActive]}>{u}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
                 <View style={{ flexDirection: "row", gap: spacing.sm }}>
                   <View style={{ flex: 1, gap: 2 }}>
-                    <Text style={styles.subLabel}>Stock total (g)</Text>
+                    <Text style={styles.subLabel}>Stock total ({draft.stock_unit || "g"})</Text>
                     <TextInput
                       value={draft.total_stock_grams}
                       onChangeText={(t) => setDraft({ ...draft, total_stock_grams: t.replace(/[^0-9.,]/g, "") })}
@@ -599,7 +631,7 @@ export default function AdminProductsScreen() {
                     />
                   </View>
                   <View style={{ flex: 1, gap: 2 }}>
-                    <Text style={styles.subLabel}>Seuil bas (g)</Text>
+                    <Text style={styles.subLabel}>Seuil bas ({draft.stock_unit || "g"})</Text>
                     <TextInput
                       value={draft.low_stock_threshold_grams}
                       onChangeText={(t) => setDraft({ ...draft, low_stock_threshold_grams: t.replace(/[^0-9.,]/g, "") })}
@@ -621,6 +653,19 @@ export default function AdminProductsScreen() {
                 <Text style={styles.switchLabel}>En promotion</Text>
                 <Switch value={draft.promo} onValueChange={(v) => setDraft({ ...draft, promo: v })} testID="draft-promo" />
               </View>
+              {draft.promo && (
+                <Field label="Prix initial avant promo (€) — affiché barré">
+                  <TextInput
+                    value={draft.original_price}
+                    onChangeText={(t) => setDraft({ ...draft, original_price: t.replace(/[^0-9.,]/g, "") })}
+                    keyboardType="decimal-pad"
+                    style={styles.input}
+                    placeholder="Ex: 12,00"
+                    placeholderTextColor={colors.muted}
+                    testID="draft-original-price"
+                  />
+                </Field>
+              )}
               <View style={styles.switchRow}>
                 <Text style={styles.switchLabel}>🚧 À venir (Bientôt disponible)</Text>
                 <Switch value={draft.coming_soon} onValueChange={(v) => setDraft({ ...draft, coming_soon: v })} testID="draft-coming-soon" />

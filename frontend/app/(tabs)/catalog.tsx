@@ -181,7 +181,14 @@ export default function CatalogScreen() {
                   {item.coming_soon ? (
                     <Text style={[styles.cardPriceFrom, { color: "#A78BFA" }]}>Bientôt disponible</Text>
                   ) : (
-                    <Text style={styles.cardPriceFrom}>dès {formatPrice(minVariantPrice(item))}</Text>
+                    <View style={styles.priceCol}>
+                      {item.promo && typeof item.original_price === "number" && item.original_price > minVariantPrice(item) && (
+                        <Text style={styles.cardStrike}>{formatPrice(item.original_price)}</Text>
+                      )}
+                      <Text style={[styles.cardPriceFrom, item.promo && styles.cardPricePromo]}>
+                        dès {formatPrice(minVariantPrice(item))}
+                      </Text>
+                    </View>
                   )}
                   <Ionicons name="chevron-forward" size={18} color={colors.muted} />
                 </View>
@@ -301,6 +308,14 @@ const styles = StyleSheet.create({
   },
   cardPrice: { fontSize: font.lg, fontWeight: "700", color: colors.brand },
   cardPriceFrom: { fontSize: font.base, fontWeight: "700", color: colors.brand },
+  cardPricePromo: { color: "#FB923C" },
+  priceCol: { flexShrink: 1 },
+  cardStrike: {
+    fontSize: font.xs,
+    color: colors.muted,
+    textDecorationLine: "line-through",
+    fontWeight: "600",
+  },
   addBtn: {
     width: 32,
     height: 32,

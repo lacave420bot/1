@@ -109,14 +109,34 @@ export default function AdminCategoriesScreen() {
         <View style={styles.center}><ActivityIndicator color={colors.brand} size="large" /></View>
       ) : (
         <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}>
-          {items.map((c) => (
+          {items.map((c, idx) => (
             <View key={c.id} style={styles.row} testID={`admin-cat-${c.id}`}>
+              <View style={styles.reorderCol}>
+                <Pressable
+                  onPress={() => move(idx, -1)}
+                  disabled={idx === 0}
+                  hitSlop={6}
+                  style={[styles.reorderBtn, idx === 0 && styles.reorderBtnDisabled]}
+                  testID={`admin-cat-up-${c.id}`}
+                >
+                  <Ionicons name="chevron-up" size={16} color={idx === 0 ? colors.muted : colors.onSurface} />
+                </Pressable>
+                <Pressable
+                  onPress={() => move(idx, 1)}
+                  disabled={idx === items.length - 1}
+                  hitSlop={6}
+                  style={[styles.reorderBtn, idx === items.length - 1 && styles.reorderBtnDisabled]}
+                  testID={`admin-cat-down-${c.id}`}
+                >
+                  <Ionicons name="chevron-down" size={16} color={idx === items.length - 1 ? colors.muted : colors.onSurface} />
+                </Pressable>
+              </View>
               <View style={styles.catIcon}>
                 <Ionicons name={c.icon as any} size={20} color={colors.brand} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowTitle}>{c.name}</Text>
-                <Text style={styles.rowSub}>{c.id} · icône {c.icon}</Text>
+                <Text style={styles.rowSub}>icône {c.icon}</Text>
               </View>
               <Pressable onPress={() => openEdit(c)} style={styles.iconBtn} testID={`admin-cat-edit-${c.id}`} hitSlop={6}>
                 <Ionicons name="create-outline" size={18} color={colors.brand} />

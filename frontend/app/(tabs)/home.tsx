@@ -19,21 +19,11 @@ import Animated, {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@/src/components/AnimatedPressable";
-import { api, type Category, type Order, type Product, type ShopHoursResponse, minVariantPrice } from "@/src/api";
+import { api, type Category, type Order, type Product, type ShopHoursResponse, isLowStock, minVariantPrice } from "@/src/api";
 import { useCart, formatPrice } from "@/src/store/cart";
 import { useAdmin } from "@/src/store/admin";
 import { useLoyalty } from "@/src/store/loyalty";
 import { colors, font, gradients, radius, shadows, spacing } from "@/src/theme";
-
-type ActionTile = {
-  id: string;
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  bg: string;
-  fg: string;
-  onPress: () => void;
-  badge?: number;
-};
 
 function formatRelativeDate(iso: string): string {
   try {
@@ -53,10 +43,13 @@ export default function HomeScreen() {
   const router = useRouter();
   const { count, guestId } = useCart();
   const { isAuthenticated: isAdmin } = useAdmin();
-  const { refresh: refreshLoyalty } = useLoyalty(guestId);
+  const { loyalty, refresh: refreshLoyalty } = useLoyalty(guestId);
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [popular, setPopular] = useState<Product[]>([]);
+  const [comingSoon, setComingSoon] = useState<Product[]>([]);
+  const [promoList, setPromoList] = useState<Product[]>([]);
+  const [lowStock, setLowStock] = useState<Product[]>([]);
   const [recentOrders, setRecentOrders] = useState<Order[]>([]);
   const [shopStatus, setShopStatus] = useState<ShopHoursResponse["status"] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,13 +59,17 @@ export default function HomeScreen() {
   const load = useCallback(async () => {
     try {
       setError(null);
-      const [cats, pop, shop] = await Promise.all([
+      const [cats, all, shop] = await Promise.all([
         api.getCategories(),
-        api.getProducts({ popular: true }),
+        api.getProducts(),
         api.getShopHours().catch(() => null),
       ]);
       setCategories(cats);
-      setPopular(pop);
+      // Derive sections from a single product list
+      setPopular(all.filter((p) => p.popular && !p.coming_soon));
+      setComingSoon(all.filter((p) => p.coming_soon));
+      setPromoList(all.filter((p) => p.promo && !p.coming_soon));
+      setLowStock(all.filter((p) => isLowStock(p)));
       if (shop) setShopStatus(shop.status);
       // Only load orders list for the admin (PIN-authenticated)
       if (isAdmin) {
@@ -131,42 +128,6 @@ export default function HomeScreen() {
       </SafeAreaView>
     );
   }
-
-  const actions: ActionTile[] = [
-    {
-      id: "catalog",
-      label: "Catalogue",
-      icon: "grid",
-      bg: "#11233F",
-      fg: "#7AB1FF",
-      onPress: () => router.push("/(tabs)/catalog"),
-    },
-    {
-      id: "cart",
-      label: "Panier",
-      icon: "bag-handle",
-      bg: "#1A1A2E",
-      fg: "#B19CFF",
-      onPress: () => router.push("/(tabs)/cart"),
-      badge: count,
-    },
-    {
-      id: "orders",
-      label: "Commandes",
-      icon: "receipt",
-      bg: "#0F2A20",
-      fg: "#4ADE80",
-      onPress: () => router.push(isAdmin ? "/admin/orders" : "/admin/login"),
-    },
-    {
-      id: "promo",
-      label: "Promotions",
-      icon: "pricetag",
-      bg: "#2A1A12",
-      fg: "#FB923C",
-      onPress: () => router.push({ pathname: "/(tabs)/catalog" }),
-    },
-  ];
 
   return (
     <View style={styles.root} testID="home-screen">
@@ -234,35 +195,31 @@ export default function HomeScreen() {
           />
         }
       >
-        {/* Action grid */}
+        {/* Cagnotte banner — replaces the old action tiles */}
         <Animated.View
           entering={FadeInDown.duration(500).delay(150)}
-          style={styles.actionsRow}
         >
-          {actions.map((a, i) => (
-            <Animated.View
-              key={a.id}
-              entering={FadeInDown.duration(450).delay(200 + i * 60)}
-              style={{ flex: 1 }}
-            >
-              <AnimatedPressable
-                style={styles.actionTile}
-                onPress={a.onPress}
-                testID={`home-action-${a.id}`}
-                scale={0.92}
-              >
-                <View style={[styles.actionIconWrap, { backgroundColor: a.bg }]}>
-                  <Ionicons name={a.icon} size={22} color={a.fg} />
-                  {a.badge && a.badge > 0 ? (
-                    <View style={styles.actionBadge}>
-                      <Text style={styles.actionBadgeText}>{a.badge}</Text>
-                    </View>
-                  ) : null}
-                </View>
-                <Text style={styles.actionLabel}>{a.label}</Text>
-              </AnimatedPressable>
-            </Animated.View>
-          ))}
+          <Pressable
+            style={styles.loyaltyBanner}
+            onPress={() => router.push("/(tabs)/catalog")}
+            testID="home-loyalty-banner"
+          >
+            <View style={styles.loyaltyIconWrap}>
+              <Ionicons name="gift" size={26} color="#FBBF24" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.loyaltyTitle}>
+                Cagnotte fidélité 🎁
+              </Text>
+              <Text style={styles.loyaltyAmount}>
+                {(loyalty?.points_balance ?? 0).toFixed(2).replace(".", ",")} €
+              </Text>
+              <Text style={styles.loyaltyHint}>
+                Gagnez 1 € de cagnotte tous les 10 € commandés
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+          </Pressable>
         </Animated.View>
 
         {/* Categories */}
@@ -305,42 +262,86 @@ export default function HomeScreen() {
         </ScrollView>
 
         {/* Popular */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Populaires</Text>
-        </View>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.md }}
-        >
-          {popular.map((item, i) => (
-            <Animated.View
-              key={item.id}
-              entering={FadeInRight.duration(450).delay(700 + i * 60)}
+        {popular.length > 0 && (
+          <>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Populaires</Text>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.md }}
             >
-              <AnimatedPressable
-                style={styles.popularCard}
-                onPress={() => router.push(`/product/${item.id}`)}
-                testID={`home-popular-${item.id}`}
-                scale={0.96}
-              >
-                <Image source={{ uri: item.image }} style={styles.popularImage} contentFit="cover" />
-                <View style={styles.popularBody}>
-                  <Text style={styles.productTitle} numberOfLines={1}>
-                    {item.name}
-                  </Text>
-                  <Text style={styles.productDesc} numberOfLines={1}>
-                    {item.unit || item.description}
-                  </Text>
-                  <View style={styles.popularFooter}>
-                    <Text style={styles.productPrice}>dès {formatPrice(minVariantPrice(item))}</Text>
-                    <Ionicons name="chevron-forward" size={18} color={colors.muted} />
-                  </View>
-                </View>
-              </AnimatedPressable>
-            </Animated.View>
-          ))}
-        </ScrollView>
+              {popular.map((item, i) => (
+                <Animated.View
+                  key={item.id}
+                  entering={FadeInRight.duration(450).delay(700 + i * 60)}
+                >
+                  <AnimatedPressable
+                    style={styles.popularCard}
+                    onPress={() => router.push(`/product/${item.id}`)}
+                    testID={`home-popular-${item.id}`}
+                    scale={0.96}
+                  >
+                    <Image source={{ uri: item.image }} style={styles.popularImage} contentFit="cover" />
+                    <View style={styles.popularBody}>
+                      <Text style={styles.productTitle} numberOfLines={1}>
+                        {item.name}
+                      </Text>
+                      <Text style={styles.productDesc} numberOfLines={1}>
+                        {item.unit || item.description}
+                      </Text>
+                      <View style={styles.popularFooter}>
+                        <Text style={styles.productPrice}>dès {formatPrice(minVariantPrice(item))}</Text>
+                        <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+                      </View>
+                    </View>
+                  </AnimatedPressable>
+                </Animated.View>
+              ))}
+            </ScrollView>
+          </>
+        )}
+
+        {/* En promotion */}
+        {promoList.length > 0 && (
+          <ProductCarousel
+            title="🔥 En promotion"
+            accent="#FB923C"
+            badgeBg="rgba(251,146,60,0.95)"
+            badgeText="Promo"
+            items={promoList}
+            onPressItem={(p) => router.push(`/product/${p.id}`)}
+            testIdPrefix="home-promo"
+          />
+        )}
+
+        {/* À venir */}
+        {comingSoon.length > 0 && (
+          <ProductCarousel
+            title="🚧 À venir"
+            accent="#A78BFA"
+            badgeBg="rgba(167,139,250,0.95)"
+            badgeText="Bientôt"
+            items={comingSoon}
+            onPressItem={(p) => router.push(`/product/${p.id}`)}
+            testIdPrefix="home-coming-soon"
+            priceLabel={() => "Bientôt disponible"}
+          />
+        )}
+
+        {/* En fin de stock */}
+        {lowStock.length > 0 && (
+          <ProductCarousel
+            title="⚠️ En fin de stock"
+            accent="#FBBF24"
+            badgeBg="rgba(251,191,36,0.95)"
+            badgeText="Stock bas"
+            items={lowStock}
+            onPressItem={(p) => router.push(`/product/${p.id}`)}
+            testIdPrefix="home-low-stock"
+          />
+        )}
 
         {/* Activity feed — recent orders */}
         {recentOrders.length > 0 && (
@@ -455,6 +456,28 @@ const styles = StyleSheet.create({
   },
   avatarText: { color: "#fff", fontSize: font.lg, fontWeight: "800" },
   topBrand: { color: colors.onSurface, fontSize: font.xl, fontWeight: "800" },
+  loyaltyBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: "rgba(251,191,36,0.08)",
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: "rgba(251,191,36,0.25)",
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  loyaltyIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "rgba(251,191,36,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loyaltyTitle: { color: colors.onSurface, fontSize: font.base, fontWeight: "700" },
+  loyaltyAmount: { color: "#FBBF24", fontSize: font.xxl, fontWeight: "800", marginTop: 2, fontVariant: ["tabular-nums"] },
+  loyaltyHint: { color: colors.muted, fontSize: font.xs, marginTop: 4 },
   shopStatusPill: {
     alignSelf: "flex-start",
     flexDirection: "row",
@@ -698,4 +721,112 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
   },
   retryText: { color: "#fff", fontWeight: "700" },
+
+  // Section badges & strikethrough
+  sectionBadge: {
+    position: "absolute",
+    top: spacing.sm,
+    left: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+  },
+  sectionBadgeText: { color: "#fff", fontSize: 10, fontWeight: "800", letterSpacing: 0.3 },
+  popularImageWrap: { position: "relative" },
+  priceRow: { flexDirection: "row", alignItems: "baseline", gap: 6, flexShrink: 1 },
+  strikePrice: {
+    color: colors.muted,
+    fontSize: font.sm,
+    textDecorationLine: "line-through",
+    fontWeight: "600",
+  },
+  promoPrice: { color: "#FB923C" },
 });
+
+// ---------------- Reusable horizontal product carousel ----------------
+
+type CarouselProps = {
+  title: string;
+  accent: string;
+  badgeBg: string;
+  badgeText: string;
+  items: Product[];
+  onPressItem: (p: Product) => void;
+  testIdPrefix: string;
+  /** Override the price label (e.g. for "Bientôt disponible") */
+  priceLabel?: (p: Product) => string;
+};
+
+function ProductCarousel({
+  title,
+  accent,
+  badgeBg,
+  badgeText,
+  items,
+  onPressItem,
+  testIdPrefix,
+  priceLabel,
+}: CarouselProps) {
+  return (
+    <>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+      </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.md }}
+      >
+        {items.map((item, i) => {
+          const original = typeof item.original_price === "number" ? item.original_price : null;
+          const hasStrike = !!original && original > minVariantPrice(item);
+          return (
+            <Animated.View
+              key={item.id}
+              entering={FadeInRight.duration(450).delay(80 + i * 50)}
+            >
+              <AnimatedPressable
+                style={styles.popularCard}
+                onPress={() => onPressItem(item)}
+                testID={`${testIdPrefix}-${item.id}`}
+                scale={0.96}
+              >
+                <View style={styles.popularImageWrap}>
+                  <Image source={{ uri: item.image }} style={styles.popularImage} contentFit="cover" />
+                  <View style={[styles.sectionBadge, { backgroundColor: badgeBg }]}>
+                    <Text style={styles.sectionBadgeText}>{badgeText}</Text>
+                  </View>
+                </View>
+                <View style={styles.popularBody}>
+                  <Text style={styles.productTitle} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                  <Text style={styles.productDesc} numberOfLines={1}>
+                    {item.unit || item.description}
+                  </Text>
+                  <View style={styles.popularFooter}>
+                    {priceLabel ? (
+                      <Text style={[styles.productPrice, { color: accent, fontSize: font.base }]} numberOfLines={1}>
+                        {priceLabel(item)}
+                      </Text>
+                    ) : (
+                      <View style={styles.priceRow}>
+                        {hasStrike && (
+                          <Text style={styles.strikePrice}>{formatPrice(original!)}</Text>
+                        )}
+                        <Text style={[styles.productPrice, hasStrike && styles.promoPrice]}>
+                          dès {formatPrice(minVariantPrice(item))}
+                        </Text>
+                      </View>
+                    )}
+                    <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+                  </View>
+                </View>
+              </AnimatedPressable>
+            </Animated.View>
+          );
+        })}
+      </ScrollView>
+    </>
+  );
+}

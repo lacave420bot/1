@@ -31,7 +31,27 @@ export type Product = {
   variants?: WeightVariant[];
   total_stock_grams?: number | null;
   low_stock_threshold_grams?: number | null;
+  stock_unit?: string;  // "g" | "ml" | "L" | "unité"
+  original_price?: number | null;
+  initial_stock_grams?: number | null;
 };
+
+// Available units for product stock display
+export const STOCK_UNITS = ["g", "ml", "L", "unité"] as const;
+export type StockUnit = (typeof STOCK_UNITS)[number];
+
+export function productUnit(p: Product): string {
+  return (p.stock_unit && p.stock_unit.trim()) || "g";
+}
+
+/** Returns true when current stock is < 20% of initial stock. */
+export function isLowStock(p: Product): boolean {
+  if (p.coming_soon) return false;
+  const total = p.total_stock_grams;
+  const initial = p.initial_stock_grams;
+  if (total == null || initial == null || initial <= 0) return false;
+  return total > 0 && total / initial < 0.2;
+}
 
 export function minVariantPrice(p: Product): number {
   if (p.variants && p.variants.length > 0) {
@@ -254,6 +274,16 @@ export const api = {
     }),
   adminDeleteCategory: (id: string) =>
     request<{ status: string }>(`/admin/categories/${id}`, { method: "DELETE" }),
+  adminReorderCategories: (ids: string[]) =>
+    request<{ status: string; count: number }>(`/admin/categories/reorder`, {
+      method: "PUT",
+      body: JSON.stringify({ ids }),
+    }),
+  adminReorderProducts: (ids: string[]) =>
+    request<{ status: string; count: number }>(`/admin/products/reorder`, {
+      method: "PUT",
+      body: JSON.stringify({ ids }),
+    }),
   adminListOrders: () => request<Order[]>(`/admin/orders`),
   adminUpdateOrderStatus: (id: string, status: string) =>
     request<Order>(`/admin/orders/${id}`, {
