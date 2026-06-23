@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -21,6 +21,14 @@ import { colors, font, radius, shadows, spacing } from "@/src/theme";
 
 type DeliveryMode = "delivery" | "pickup";
 
+type AddressSuggestion = {
+  label: string;
+  housenumber?: string;
+  street?: string;
+  postcode?: string;
+  city?: string;
+};
+
 export default function CheckoutScreen() {
   const router = useRouter();
   const {
@@ -34,6 +42,9 @@ export default function CheckoutScreen() {
   const [name, setName] = useState(user?.name || "");
   const [phone, setPhone] = useState(user?.phone || "");
   const [address, setAddress] = useState("");
+  const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const addressDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [notes, setNotes] = useState("");
   const [promoInput, setPromoInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -56,6 +67,47 @@ export default function CheckoutScreen() {
       })
       .catch(() => {});
     return () => { alive = false; };
+  }, []);
+
+  // Address autocomplete via French government API
+  const searchAddress = useCallback((query: string) => {
+    if (addressDebounceRef.current) clearTimeout(addressDebounceRef.current);
+    if (query.trim().length < 3) {
+      setAddressSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    addressDebounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(query.trim())}&limit=5`
+        );
+        const data = await res.json();
+        const suggestions: AddressSuggestion[] = (data.features || []).map((f: any) => ({
+          label: f.properties?.label || "",
+          housenumber: f.properties?.housenumber || "",
+          street: f.properties?.street || f.properties?.name || "",
+          postcode: f.properties?.postcode || "",
+          city: f.properties?.city || "",
+        }));
+        setAddressSuggestions(suggestions);
+        setShowSuggestions(suggestions.length > 0);
+      } catch {
+        setAddressSuggestions([]);
+        setShowSuggestions(false);
+      }
+    }, 350);
+  }, []);
+
+  const handleAddressChange = useCallback((text: string) => {
+    setAddress(text);
+    searchAddress(text);
+  }, [searchAddress]);
+
+  const selectAddress = useCallback((suggestion: AddressSuggestion) => {
+    setAddress(suggestion.label);
+    setShowSuggestions(false);
+    setAddressSuggestions([]);
   }, []);
 
   const canSubmit =
@@ -268,16 +320,46 @@ export default function CheckoutScreen() {
             {mode === "delivery" && (
               <View style={styles.field}>
                 <Text style={styles.label}>Adresse de livraison</Text>
-                <TextInput
-                  value={address}
-                  onChangeText={setAddress}
-                  placeholder="12 rue de la Paix, 75002 Paris"
-                  placeholderTextColor={colors.muted}
-                  style={[styles.input, styles.multiline]}
-                  multiline
-                  numberOfLines={3}
-                  testID="checkout-address"
-                />
+                <View>
+                  <TextInput
+                    value={address}
+                    onChangeText={handleAddressChange}
+                    placeholder="Tapez votre adresse…"
+                    placeholderTextColor={colors.muted}
+                    style={styles.input}
+                    testID="checkout-address"
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                    onFocus={() => {
+                      if (addressSuggestions.length > 0) setShowSuggestions(true);
+                    }}
+                  />
+                  {showSuggestions && addressSuggestions.length > 0 && (
+                    <View style={styles.suggestionsContainer}>
+                      {addressSuggestions.map((s, i) => (
+                        <Pressable
+                          key={`${s.label}-${i}`}
+                          style={({ pressed }) => [
+                            styles.suggestionItem,
+                            pressed && styles.suggestionItemPressed,
+                            i < addressSuggestions.length - 1 && styles.suggestionDivider,
+                          ]}
+                          onPress={() => selectAddress(s)}
+                          testID={`address-suggestion-${i}`}
+                        >
+                          <Ionicons name="location-outline" size={16} color={colors.brand} style={{ marginTop: 2 }} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.suggestionText} numberOfLines={1}>
+                              {s.housenumber ? `${s.housenumber} ${s.street}` : s.street}
+                            </Text>
+                            <Text style={styles.suggestionSubtext} numberOfLines={1}>
+                              {s.postcode} {s.city}
+                            </Text>
+                          </View>
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
+                </View>
               </View>
             )}
             <View style={styles.field}>
@@ -647,4 +729,36 @@ const styles = StyleSheet.create({
   },
   successBtnText: { color: "#fff", fontWeight: "700", fontSize: font.base },
   linkText: { color: colors.muted, fontSize: font.base, marginTop: spacing.sm, textDecorationLine: "underline" },
+  suggestionsContainer: {
+    backgroundColor: colors.surfaceTertiary,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: spacing.xs,
+    overflow: "hidden",
+  },
+  suggestionItem: {
+    flexDirection: "row" as const,
+    alignItems: "flex-start" as const,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  suggestionItemPressed: {
+    backgroundColor: colors.brandSecondary,
+  },
+  suggestionDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+  },
+  suggestionText: {
+    color: colors.onSurface,
+    fontSize: font.base,
+    fontWeight: "600" as const,
+  },
+  suggestionSubtext: {
+    color: colors.muted,
+    fontSize: font.sm,
+    marginTop: 1,
+  },
 });
