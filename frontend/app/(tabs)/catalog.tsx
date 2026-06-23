@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api, type Category, type Product, minVariantPrice } from "@/src/api";
+import { AnimatedPressable } from "@/src/components/AnimatedPressable";
 import { useCart, formatPrice } from "@/src/store/cart";
 import { colors, font, radius, shadows, spacing } from "@/src/theme";
 
@@ -147,8 +148,9 @@ export default function CatalogScreen() {
             gap: spacing.md,
           }}
           renderItem={({ item }) => (
-            <Pressable
+            <AnimatedPressable
               style={styles.card}
+              scale={0.97}
               onPress={() => router.push(`/product/${item.id}`)}
               testID={`catalog-product-${item.id}`}
             >
@@ -174,14 +176,16 @@ export default function CatalogScreen() {
                   <Ionicons name="chevron-forward" size={18} color={colors.muted} />
                 </View>
               </View>
-            </Pressable>
+            </AnimatedPressable>
           )}
         />
       )}
 
       {count > 0 && (
-        <Pressable
+        <AnimatedPressable
           style={styles.floatingCart}
+          scale={0.97}
+          haptic="medium"
           onPress={() => router.push("/(tabs)/cart")}
           testID="catalog-floating-cart"
         >
@@ -192,7 +196,7 @@ export default function CatalogScreen() {
             <Text style={styles.floatingCartText}>Voir le panier</Text>
           </View>
           <Text style={styles.floatingCartTotal}>{formatPrice(total)}</Text>
-        </Pressable>
+        </AnimatedPressable>
       )}
     </SafeAreaView>
   );

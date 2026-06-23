@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api, type Product } from "@/src/api";
+import { AnimatedPressable } from "@/src/components/AnimatedPressable";
 import { useCart, formatPrice, lineKey } from "@/src/store/cart";
 import { colors, font, radius, shadows, spacing } from "@/src/theme";
 
@@ -439,8 +440,10 @@ export default function CartScreen() {
               </Text>
             </View>
           )}
-          <Pressable
+          <AnimatedPressable
             style={[styles.ctaBtn, hasBlockingIssue && styles.ctaBtnDisabled]}
+            scale={0.97}
+            haptic="medium"
             disabled={hasBlockingIssue}
             onPress={() => router.push("/checkout")}
             testID="cart-checkout-btn"
@@ -448,7 +451,7 @@ export default function CartScreen() {
             <Text style={styles.ctaText}>
               Passer la commande · {formatPrice(total)}
             </Text>
-          </Pressable>
+          </AnimatedPressable>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>

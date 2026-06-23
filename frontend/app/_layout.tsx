@@ -37,32 +37,40 @@ export default function RootLayout() {
                 screenOptions={{
                   headerShown: false,
                   contentStyle: { backgroundColor: "#0A0A0B" },
+                  animation: "slide_from_right",
+                  animationDuration: 220,
+                  gestureEnabled: true,
+                  fullScreenGestureEnabled: true,
                 }}
               >
-                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="(tabs)" options={{ headerShown: false, animation: "fade" }} />
                 <Stack.Screen
                   name="product/[id]"
-                  options={{ headerShown: false, presentation: "card" }}
+                  options={{ headerShown: false, presentation: "card", animation: "slide_from_right" }}
                 />
                 <Stack.Screen
                   name="checkout"
-                  options={{ headerShown: false, presentation: "card" }}
+                  options={{ headerShown: false, presentation: "card", animation: "slide_from_bottom", animationDuration: 280 }}
                 />
                 <Stack.Screen
                   name="order/[id]"
-                  options={{ headerShown: false, presentation: "card" }}
+                  options={{ headerShown: false, presentation: "card", animation: "slide_from_right" }}
                 />
                 <Stack.Screen
                   name="settings"
-                  options={{ headerShown: false, presentation: "card" }}
+                  options={{ headerShown: false, presentation: "card", animation: "slide_from_right" }}
+                />
+                <Stack.Screen
+                  name="shop-hours"
+                  options={{ headerShown: false, presentation: "card", animation: "slide_from_right" }}
                 />
                 <Stack.Screen
                   name="login"
-                  options={{ headerShown: false, presentation: "modal" }}
+                  options={{ headerShown: false, presentation: "modal", animation: "slide_from_bottom", animationDuration: 300 }}
                 />
                 <Stack.Screen
                   name="admin"
-                  options={{ headerShown: false, presentation: "card" }}
+                  options={{ headerShown: false, presentation: "card", animation: "slide_from_right" }}
                 />
               </Stack>
             </AdminProvider>

@@ -34,17 +34,22 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: colors.brand,
         tabBarInactiveTintColor: colors.muted,
+        animation: "shift",
+        tabBarHideOnKeyboard: true,
         tabBarStyle: {
           backgroundColor: colors.surfaceSecondary,
           borderTopColor: colors.border,
+          borderTopWidth: 0.5,
           height: 84,
           paddingBottom: 24,
           paddingTop: 8,
+          elevation: 0,
         },
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: "600",
         },
+        tabBarItemStyle: { paddingVertical: 4 },
       }}
     >
       <Tabs.Screen
