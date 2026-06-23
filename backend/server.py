@@ -1949,6 +1949,7 @@ async def admin_setup_telegram_webhook(_admin: dict = Depends(require_admin)):
     webhook_url = f"{BACKEND_BASE_URL}/api/telegram/webhook"
 
     bot_username = ""
+    info: dict = {}
     try:
         async with httpx.AsyncClient(timeout=10.0) as c:
             # Fetch bot identity (username) so the frontend can build t.me/<username> links
@@ -1956,6 +1957,14 @@ async def admin_setup_telegram_webhook(_admin: dict = Depends(require_admin)):
             me_data = me.json()
             if me_data.get("ok"):
                 bot_username = me_data.get("result", {}).get("username") or ""
+            # First, drop any stale webhook + pending updates to ensure a clean state
+            try:
+                await c.post(
+                    f"https://api.telegram.org/bot{token}/deleteWebhook",
+                    json={"drop_pending_updates": True},
+                )
+            except Exception as e:
+                logger.warning("[telegram] deleteWebhook (cleanup) failed: %s", e)
             # Register webhook
             r = await c.post(
                 f"https://api.telegram.org/bot{token}/setWebhook",
@@ -1963,11 +1972,18 @@ async def admin_setup_telegram_webhook(_admin: dict = Depends(require_admin)):
                     "url": webhook_url,
                     "secret_token": secret,
                     "allowed_updates": ["callback_query", "message"],
+                    "drop_pending_updates": True,
                 },
             )
             data = r.json()
             if not data.get("ok"):
                 raise HTTPException(status_code=400, detail=data.get("description") or r.text)
+            # Verify with getWebhookInfo so the admin sees confirmation
+            try:
+                wh = await c.get(f"https://api.telegram.org/bot{token}/getWebhookInfo")
+                info = wh.json().get("result") or {}
+            except Exception:
+                info = {}
     except HTTPException:
         raise
     except Exception as e:
@@ -1981,7 +1997,14 @@ async def admin_setup_telegram_webhook(_admin: dict = Depends(require_admin)):
             upsert=True,
         )
 
-    return {"status": "ok", "webhook_url": webhook_url, "bot_username": bot_username}
+    return {
+        "status": "ok",
+        "webhook_url": webhook_url,
+        "bot_username": bot_username,
+        "verified_url": info.get("url"),
+        "pending_update_count": info.get("pending_update_count"),
+        "last_error_message": info.get("last_error_message"),
+    }
 
 
 @api_router.post("/telegram/webhook")
