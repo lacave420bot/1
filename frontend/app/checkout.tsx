@@ -29,6 +29,33 @@ type AddressSuggestion = {
   city?: string;
 };
 
+type GeocodingFeature = {
+  properties: {
+    label?: string;
+    housenumber?: string;
+    street?: string;
+    name?: string;
+    postcode?: string;
+    city?: string;
+  };
+};
+
+type GeocodingResponse = {
+  features?: GeocodingFeature[];
+};
+
+function variantSectionLabel(stockUnit?: string | null): string {
+  switch (stockUnit) {
+    case "unité":
+      return "Choisir la quantité";
+    case "ml":
+    case "L":
+      return "Choisir le volume";
+    default:
+      return "Choisir le poids";
+  }
+}
+
 export default function CheckoutScreen() {
   const router = useRouter();
   const {
@@ -45,6 +72,7 @@ export default function CheckoutScreen() {
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const addressDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [notes, setNotes] = useState("");
   const [promoInput, setPromoInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -82,8 +110,8 @@ export default function CheckoutScreen() {
         const res = await fetch(
           `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(query.trim())}&limit=5`
         );
-        const data = await res.json();
-        const suggestions: AddressSuggestion[] = (data.features || []).map((f: any) => ({
+        const data: GeocodingResponse = await res.json();
+        const suggestions: AddressSuggestion[] = (data.features || []).map((f) => ({
           label: f.properties?.label || "",
           housenumber: f.properties?.housenumber || "",
           street: f.properties?.street || f.properties?.name || "",
@@ -328,7 +356,10 @@ export default function CheckoutScreen() {
                     placeholderTextColor={colors.muted}
                     style={styles.input}
                     testID="checkout-address"
-                    onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                    onBlur={() => {
+                      if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+                      blurTimeoutRef.current = setTimeout(() => setShowSuggestions(false), 200);
+                    }}
                     onFocus={() => {
                       if (addressSuggestions.length > 0) setShowSuggestions(true);
                     }}
