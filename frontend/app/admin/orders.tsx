@@ -534,13 +534,15 @@ export default function AdminOrdersScreen() {
                     </View>
                   ))}
                   <View style={styles.divider} />
-                  <Row label="Sous-total" value={formatPrice(selected.subtotal)} />
                   {selected.discount_amount > 0 && (
-                    <Row
-                      label={`Réduction${selected.promo_code ? ` (${selected.promo_code})` : ""}`}
-                      value={`− ${formatPrice(selected.discount_amount)}`}
-                      valueColor={colors.success}
-                    />
+                    <>
+                      <Row label="Sous-total" value={formatPrice(selected.subtotal)} />
+                      <Row
+                        label={`Réduction${selected.promo_code ? ` (${selected.promo_code})` : ""}`}
+                        value={`− ${formatPrice(selected.discount_amount)}`}
+                        valueColor={colors.success}
+                      />
+                    </>
                   )}
                   <Row label="Total payé" value={formatPrice(selected.total)} bold />
                 </View>

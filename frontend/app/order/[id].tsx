@@ -252,21 +252,23 @@ export default function OrderDetailScreen() {
 
         {/* Totals */}
         <View style={styles.section}>
-          <View style={styles.sumRow}>
-            <Text style={styles.sumLabel}>Sous-total</Text>
-            <Text style={styles.sumValue}>{formatPrice(order.subtotal)}</Text>
-          </View>
           {order.discount_amount > 0 && (
-            <View style={styles.sumRow}>
-              <Text style={styles.sumLabel}>
-                Réduction {order.promo_code ? `(${order.promo_code})` : ""}
-              </Text>
-              <Text style={[styles.sumValue, { color: colors.success }]}>
-                − {formatPrice(order.discount_amount)}
-              </Text>
-            </View>
+            <>
+              <View style={styles.sumRow}>
+                <Text style={styles.sumLabel}>Sous-total</Text>
+                <Text style={styles.sumValue}>{formatPrice(order.subtotal)}</Text>
+              </View>
+              <View style={styles.sumRow}>
+                <Text style={styles.sumLabel}>
+                  Réduction {order.promo_code ? `(${order.promo_code})` : ""}
+                </Text>
+                <Text style={[styles.sumValue, { color: colors.success }]}>
+                  − {formatPrice(order.discount_amount)}
+                </Text>
+              </View>
+              <View style={styles.divider} />
+            </>
           )}
-          <View style={styles.divider} />
           <View style={styles.sumRow}>
             <Text style={styles.totalLabel}>Total</Text>
             <Text style={styles.totalValue}>{formatPrice(order.total)}</Text>

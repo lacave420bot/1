@@ -426,26 +426,28 @@ export default function CartScreen() {
 
           {/* Summary */}
           <View style={styles.summary}>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Sous-total</Text>
-              <Text style={styles.summaryValue} testID="cart-subtotal">
-                {formatPrice(subtotal)}
-              </Text>
-            </View>
             {discount > 0 && (
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>
-                  Réduction {promoCode ? `(${promoCode})` : ""}
-                </Text>
-                <Text
-                  style={[styles.summaryValue, { color: colors.success }]}
-                  testID="cart-discount"
-                >
-                  − {formatPrice(discount)}
-                </Text>
-              </View>
+              <>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Sous-total</Text>
+                  <Text style={styles.summaryValue} testID="cart-subtotal">
+                    {formatPrice(subtotal)}
+                  </Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>
+                    Réduction {promoCode ? `(${promoCode})` : ""}
+                  </Text>
+                  <Text
+                    style={[styles.summaryValue, { color: colors.success }]}
+                    testID="cart-discount"
+                  >
+                    − {formatPrice(discount)}
+                  </Text>
+                </View>
+                <View style={styles.summaryDivider} />
+              </>
             )}
-            <View style={styles.summaryDivider} />
             <View style={styles.summaryRow}>
               <Text style={styles.totalLabel}>Total</Text>
               <Text style={styles.totalValue} testID="cart-total">

@@ -938,8 +938,9 @@ def _format_order_html(order: Order) -> str:
         line_total = it.price * it.quantity
         lines.append(f"  • {it.quantity}× {_esc(it.name)}{variant} — {line_total:.2f} €".replace(".", ","))
     lines.append("")
-    lines.append(f"💰 Sous-total : <b>{order.subtotal:.2f} €</b>".replace(".", ","))
+    # Sous-total only shown if there's a discount (otherwise identical to total)
     if order.discount_amount > 0:
+        lines.append(f"💰 Sous-total : <b>{order.subtotal:.2f} €</b>".replace(".", ","))
         promo = f" ({_esc(order.promo_code)})" if order.promo_code else ""
         lines.append(f"🎟️ Code promo{promo} : −{order.discount_amount:.2f} €".replace(".", ","))
     lines.append(f"✅ <b>Total : {order.total:.2f} €</b>".replace(".", ","))

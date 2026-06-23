@@ -339,23 +339,25 @@ export default function CheckoutScreen() {
               </View>
             ))}
             <View style={styles.divider} />
-            <View style={styles.itemRow}>
-              <Text style={styles.itemLabel}>Sous-total</Text>
-              <Text style={styles.itemPrice} testID="checkout-subtotal">
-                {formatPrice(subtotal)}
-              </Text>
-            </View>
             {discount > 0 && (
-              <View style={styles.itemRow}>
-                <Text style={styles.itemLabel}>
-                  Réduction {promoCode ? `(${promoCode})` : ""}
-                </Text>
-                <Text style={[styles.itemPrice, { color: colors.success }]} testID="checkout-discount">
-                  − {formatPrice(discount)}
-                </Text>
-              </View>
+              <>
+                <View style={styles.itemRow}>
+                  <Text style={styles.itemLabel}>Sous-total</Text>
+                  <Text style={styles.itemPrice} testID="checkout-subtotal">
+                    {formatPrice(subtotal)}
+                  </Text>
+                </View>
+                <View style={styles.itemRow}>
+                  <Text style={styles.itemLabel}>
+                    Réduction {promoCode ? `(${promoCode})` : ""}
+                  </Text>
+                  <Text style={[styles.itemPrice, { color: colors.success }]} testID="checkout-discount">
+                    − {formatPrice(discount)}
+                  </Text>
+                </View>
+                <View style={styles.divider} />
+              </>
             )}
-            <View style={styles.divider} />
             <View style={styles.itemRow}>
               <Text style={styles.totalLabel}>Total</Text>
               <Text style={styles.totalValue} testID="checkout-total">
