@@ -284,8 +284,11 @@ export const api = {
       `/admin/telegram/discover`,
       { method: "POST" },
     ),
-  adminTestTelegram: () =>
-    request<{ status: string }>(`/admin/telegram/test`, { method: "POST" }),
+  adminTestTelegram: (mode: "pickup" | "delivery" = "pickup") =>
+    request<{ status: string; order_id: string; delivery_mode: string }>(
+      `/admin/telegram/test?mode=${mode}`,
+      { method: "POST" },
+    ),
   adminSetupTelegramWebhook: () =>
     request<{ status: string; webhook_url: string }>(`/admin/telegram/setup-webhook`, { method: "POST" }),
 
@@ -367,6 +370,8 @@ export type ShopHoursResponse = {
     today_label: string;
     open?: string;
     close?: string;
+    closes_in_minutes?: number;
+    closing_soon?: boolean;
   };
 };
 export type AdminAnalytics = {

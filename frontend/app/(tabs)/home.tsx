@@ -15,7 +15,6 @@ import {
 import Animated, {
   FadeInDown,
   FadeInRight,
-  FadeIn,
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -175,21 +174,34 @@ export default function HomeScreen() {
         <View style={styles.topBar}>
           <View style={{ flex: 1, gap: 4 }}>
             <Text style={styles.topBrand}>La Cave 420 🫶🏽</Text>
-            {shopStatus && (
-              <Pressable
-                onPress={() => router.push("/shop-hours")}
-                style={[
-                  styles.shopStatusPill,
-                  shopStatus.is_open ? styles.shopStatusOpen : styles.shopStatusClosed,
-                ]}
-                testID="home-shop-status"
-              >
-                <View style={[styles.statusDot, { backgroundColor: shopStatus.is_open ? "#4ADE80" : "#FCA5A5" }]} />
-                <Text style={[styles.shopStatusText, { color: shopStatus.is_open ? "#86EFAC" : "#FCA5A5" }]} numberOfLines={1}>
-                  {shopStatus.is_open ? `Ouvert · ${shopStatus.reason}` : shopStatus.reason}
-                </Text>
-              </Pressable>
-            )}
+            {shopStatus && (() => {
+              const closingSoon = shopStatus.is_open && !!shopStatus.closing_soon;
+              const pillStyle = !shopStatus.is_open
+                ? styles.shopStatusClosed
+                : closingSoon
+                ? styles.shopStatusClosingSoon
+                : styles.shopStatusOpen;
+              const dotColor = !shopStatus.is_open ? "#FCA5A5" : closingSoon ? "#FB923C" : "#4ADE80";
+              const textColor = !shopStatus.is_open ? "#FCA5A5" : closingSoon ? "#FDBA74" : "#86EFAC";
+              const mins = shopStatus.closes_in_minutes ?? 0;
+              const label = !shopStatus.is_open
+                ? shopStatus.reason
+                : closingSoon
+                ? `⚠️ Ferme bientôt · dans ${mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)}h${mins % 60 ? String(mins % 60).padStart(2, "0") : ""}`}`
+                : `Ouvert · ${shopStatus.reason}`;
+              return (
+                <Pressable
+                  onPress={() => router.push("/shop-hours")}
+                  style={[styles.shopStatusPill, pillStyle]}
+                  testID="home-shop-status"
+                >
+                  <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
+                  <Text style={[styles.shopStatusText, { color: textColor }]} numberOfLines={1}>
+                    {label}
+                  </Text>
+                </Pressable>
+              );
+            })()}
           </View>
           <Pressable
             style={styles.iconBtn}
@@ -456,6 +468,7 @@ const styles = StyleSheet.create({
   },
   shopStatusOpen: { backgroundColor: "rgba(74,222,128,0.08)", borderColor: "rgba(74,222,128,0.30)" },
   shopStatusClosed: { backgroundColor: "rgba(252,165,165,0.08)", borderColor: "rgba(252,165,165,0.30)" },
+  shopStatusClosingSoon: { backgroundColor: "rgba(251,146,60,0.10)", borderColor: "rgba(251,146,60,0.40)" },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   shopStatusText: { fontSize: font.xs, fontWeight: "700" },
   iconBtn: {

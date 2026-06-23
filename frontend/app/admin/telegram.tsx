@@ -68,6 +68,7 @@ export default function AdminTelegramScreen() {
   const [saving, setSaving] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [testMode, setTestMode] = useState<"pickup" | "delivery">("pickup");
   const [settingUpWebhook, setSettingUpWebhook] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -175,8 +176,12 @@ export default function AdminTelegramScreen() {
   const sendTest = async () => {
     try {
       setTesting(true); setMsg(null);
-      await api.adminTestTelegram();
-      setMsg({ kind: "ok", text: "Message de test envoyé ! Vérifiez Telegram 📨" });
+      const res = await api.adminTestTelegram(testMode);
+      const shortId = res.order_id.slice(0, 8).toUpperCase();
+      setMsg({
+        kind: "ok",
+        text: `✅ Commande test #${shortId} envoyée (${testMode === "pickup" ? "Sur place" : "Livraison"}) ! Cliquez sur les boutons dans Telegram pour vérifier. Supprimez-la ensuite depuis Admin → Commandes.`,
+      });
     } catch (e: any) {
       setMsg({ kind: "err", text: e?.message || "Erreur" });
     } finally { setTesting(false); }
@@ -358,11 +363,33 @@ export default function AdminTelegramScreen() {
           <View style={styles.section}>
             <View style={styles.stepHeader}>
               <View style={styles.stepNum}><Text style={styles.stepNumText}>3</Text></View>
-              <Text style={styles.sectionTitle}>Tester</Text>
+              <Text style={styles.sectionTitle}>Tester avec une commande factice</Text>
             </View>
             <Text style={styles.help}>
-              Envoyez un message de test à votre Telegram pour vérifier que tout fonctionne.
+              Crée une vraie commande de test (✏️ marquée « TEST ») et l&apos;envoie sur Telegram avec les boutons inline. Vous pourrez ensuite cliquer sur ✅ / ❌ pour valider, puis supprimer la commande dans Admin → Commandes.
             </Text>
+            <View style={styles.testModeRow}>
+              <Pressable
+                style={[styles.testModeBtn, testMode === "pickup" && styles.testModeBtnActive]}
+                onPress={() => setTestMode("pickup")}
+                testID="tg-test-mode-pickup"
+              >
+                <Ionicons name="storefront" size={14} color={testMode === "pickup" ? "#fff" : colors.muted} />
+                <Text style={[styles.testModeText, testMode === "pickup" && styles.testModeTextActive]}>
+                  Sur place 🦁
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.testModeBtn, testMode === "delivery" && styles.testModeBtnActive]}
+                onPress={() => setTestMode("delivery")}
+                testID="tg-test-mode-delivery"
+              >
+                <Ionicons name="bicycle" size={14} color={testMode === "delivery" ? "#fff" : colors.muted} />
+                <Text style={[styles.testModeText, testMode === "delivery" && styles.testModeTextActive]}>
+                  Livraison
+                </Text>
+              </Pressable>
+            </View>
             <Pressable
               style={[styles.btn, (testing || !maskedToken || !chatId) && { opacity: 0.5 }]}
               onPress={sendTest}
@@ -371,8 +398,8 @@ export default function AdminTelegramScreen() {
             >
               {testing ? <ActivityIndicator color="#fff" /> : (
                 <View style={{ flexDirection: "row", gap: spacing.sm, alignItems: "center" }}>
-                  <Ionicons name="paper-plane" size={18} color="#fff" />
-                  <Text style={styles.btnText}>Envoyer un message de test</Text>
+                  <Ionicons name="receipt" size={18} color="#fff" />
+                  <Text style={styles.btnText}>Créer une commande test</Text>
                 </View>
               )}
             </Pressable>
@@ -437,6 +464,22 @@ const styles = StyleSheet.create({
   savedText: { color: "#A7F3D0", fontSize: font.sm, fontWeight: "600", flex: 1 },
   btn: { backgroundColor: colors.brand, height: 48, borderRadius: radius.pill, alignItems: "center", justifyContent: "center", paddingHorizontal: spacing.lg },
   btnText: { color: "#fff", fontWeight: "800", fontSize: font.base },
+  testModeRow: { flexDirection: "row", gap: spacing.sm, marginVertical: spacing.sm },
+  testModeBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceTertiary,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  testModeBtnActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  testModeText: { color: colors.muted, fontWeight: "700", fontSize: font.sm },
+  testModeTextActive: { color: "#fff" },
   btnSecondary: { height: 48, borderRadius: radius.pill, borderWidth: 1.5, borderColor: colors.brand, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface },
   btnSecondaryText: { color: colors.brand, fontWeight: "700", fontSize: font.base },
   chatRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface },

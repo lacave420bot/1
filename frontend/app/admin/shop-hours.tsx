@@ -122,10 +122,11 @@ export default function ShopHoursScreen() {
         Alert.alert("Erreur", `${d.label} : heure de fermeture invalide (HH:MM).`);
         return;
       }
-      if (hasOpen && hasClose && (h.open as string) >= (h.close as string)) {
-        Alert.alert("Erreur", `${d.label} : fermeture doit être après ouverture.`);
+      if (hasOpen && hasClose && h.open === h.close) {
+        Alert.alert("Erreur", `${d.label} : fermeture doit être différente de l'ouverture.`);
         return;
       }
+      // Note: close < open (overnight) is allowed
     }
     try {
       setSaving(true);
@@ -261,9 +262,10 @@ export default function ShopHoursScreen() {
                 {DAYS.map(({ key, label }) => {
                   const d = hours?.[key];
                   const isOpen = !!d?.open && !!d?.close;
+                  const isOvernight = isOpen && d && d.open && d.close && d.open > d.close;
                   return (
                     <View key={key} style={styles.dayRow}>
-                      <View style={styles.dayLabelWrap}>
+                      <View style={styles.dayHeader}>
                         <Text style={styles.dayLabel}>{label}</Text>
                         <Switch
                           value={isOpen}
@@ -273,28 +275,35 @@ export default function ShopHoursScreen() {
                         />
                       </View>
                       {isOpen ? (
-                        <View style={styles.dayInputs}>
-                          <TextInput
-                            value={d?.open || ""}
-                            onChangeText={(t) => updateDay(key, { open: maskHHMM(t) })}
-                            placeholder="10:00"
-                            placeholderTextColor={colors.muted}
-                            style={styles.timeInput}
-                            keyboardType="number-pad"
-                            maxLength={5}
-                            testID={`day-open-${key}`}
-                          />
-                          <Text style={styles.timeSeparator}>→</Text>
-                          <TextInput
-                            value={d?.close || ""}
-                            onChangeText={(t) => updateDay(key, { close: maskHHMM(t) })}
-                            placeholder="19:00"
-                            placeholderTextColor={colors.muted}
-                            style={styles.timeInput}
-                            keyboardType="number-pad"
-                            maxLength={5}
-                            testID={`day-close-${key}`}
-                          />
+                        <View style={styles.dayInputsWrap}>
+                          <View style={styles.dayInputs}>
+                            <TextInput
+                              value={d?.open || ""}
+                              onChangeText={(t) => updateDay(key, { open: maskHHMM(t) })}
+                              placeholder="10:00"
+                              placeholderTextColor={colors.muted}
+                              style={styles.timeInput}
+                              keyboardType="number-pad"
+                              maxLength={5}
+                              testID={`day-open-${key}`}
+                            />
+                            <Text style={styles.timeSeparator}>→</Text>
+                            <TextInput
+                              value={d?.close || ""}
+                              onChangeText={(t) => updateDay(key, { close: maskHHMM(t) })}
+                              placeholder="19:00"
+                              placeholderTextColor={colors.muted}
+                              style={styles.timeInput}
+                              keyboardType="number-pad"
+                              maxLength={5}
+                              testID={`day-close-${key}`}
+                            />
+                          </View>
+                          {isOvernight && (
+                            <Text style={styles.overnightHint}>
+                              🌙 Ferme le lendemain à {d?.close}
+                            </Text>
+                          )}
                         </View>
                       ) : (
                         <Text style={styles.closedText}>Fermé</Text>
@@ -441,27 +450,33 @@ const styles = StyleSheet.create({
   sectionHint: { color: colors.muted, fontSize: font.sm },
 
   dayRow: {
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+    gap: spacing.sm,
+  },
+  dayHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
   },
-  dayLabelWrap: { flexDirection: "row", alignItems: "center", gap: spacing.md, minWidth: 140 },
-  dayLabel: { color: colors.onSurface, fontSize: font.base, fontWeight: "600", width: 84 },
-  dayInputs: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  dayLabel: { color: colors.onSurface, fontSize: font.base, fontWeight: "600" },
+  dayInputsWrap: { gap: 4 },
+  dayInputs: { flexDirection: "row", alignItems: "center", gap: spacing.sm, flexWrap: "wrap" },
   timeInput: {
     backgroundColor: colors.surfaceTertiary,
     color: colors.onSurface,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: radius.md,
-    minWidth: 70,
+    minWidth: 90,
     textAlign: "center",
     fontVariant: ["tabular-nums"],
+    fontSize: font.base,
+    fontWeight: "600",
   },
-  timeSeparator: { color: colors.muted, fontSize: font.base },
+  timeSeparator: { color: colors.muted, fontSize: font.base, fontWeight: "700" },
+  overnightHint: { color: "#A78BFA", fontSize: font.xs, fontWeight: "600", marginTop: 2 },
   closedText: { color: colors.muted, fontStyle: "italic" },
 
   saveBtn: {

@@ -1848,22 +1848,61 @@ async def admin_discover_chat(_admin: dict = Depends(require_admin)):
 
 
 @api_router.post("/admin/telegram/test")
-async def admin_test_telegram(_admin: dict = Depends(require_admin)):
+async def admin_test_telegram(mode: str = "pickup", _admin: dict = Depends(require_admin)):
+    """Create a synthetic test order to validate the full Telegram order pipeline.
+
+    This sends a real-looking order notification with inline status buttons that
+    can be exercised by clicking them. The test order is stored in DB so the
+    callback handler can update it (admin can delete or cancel it after testing).
+    """
     token, chat_id = await _get_telegram_config()
     if not token or not chat_id:
         raise HTTPException(status_code=400, detail="Configurez d'abord le bot et le chat.")
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    text = "✅ <b>Test réussi !</b>\nVotre boutique CBD est bien connectée à ce chat. Vous recevrez chaque nouvelle commande ici."
+
+    delivery_mode = "pickup" if (mode or "").lower() == "pickup" else "delivery"
+
+    # Build a synthetic order
+    test_items = [
+        OrderItem(
+            product_id="test-product-1",
+            product_name="🌿 Fleur Test (Skywalker OG)",
+            variant_label="3 g",
+            unit_price=24.00,
+            quantity=1,
+        ),
+        OrderItem(
+            product_id="test-product-2",
+            product_name="🍪 Cookie Test (Brownie THC<0,3%)",
+            variant_label="1 pièce",
+            unit_price=6.50,
+            quantity=2,
+        ),
+    ]
+    order = Order(
+        guest_id="admin-test",
+        items=test_items,
+        customer_name="🧪 Commande TEST",
+        phone="+33 6 00 00 00 00",
+        address="" if delivery_mode == "pickup" else "12 rue de la Test, 69000 Lyon",
+        delivery_mode=delivery_mode,
+        notes="Commande de test générée depuis l'admin — peut être annulée.",
+        subtotal=37.00,
+        discount=0.0,
+        total=37.00,
+        status="En cours",
+    )
+
+    # Persist
+    await db.orders.insert_one(order.model_dump())
+
+    # Send Telegram notification (real message + inline keyboard)
     try:
-        async with httpx.AsyncClient(timeout=8.0) as c:
-            r = await c.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"})
-            if r.status_code != 200:
-                raise HTTPException(status_code=400, detail=r.json().get("description") or r.text)
-    except HTTPException:
-        raise
+        await send_telegram_order_notification(order)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Erreur réseau : {e}") from e
-    return {"status": "ok"}
+        logger.warning("[telegram] test order notif error: %s", e)
+        raise HTTPException(status_code=502, detail=f"Notification Telegram échouée : {e}") from e
+
+    return {"status": "ok", "order_id": order.id, "delivery_mode": delivery_mode}
 
 
 # ---------------- Telegram inline-keyboard webhook ----------------
@@ -2386,15 +2425,17 @@ class ShopClosure(BaseModel):
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
-# Default opening hours (Mon-Sat 10:00-19:00, closed Sunday)
+# Default opening hours:
+#   Mon-Thu  10:00 → 23:00 (same day)
+#   Fri-Sun  10:00 → 02:00 (overnight, closes next day at 02:00)
 DEFAULT_HOURS = OpeningHours(
-    monday=DayHours(open="10:00", close="19:00"),
-    tuesday=DayHours(open="10:00", close="19:00"),
-    wednesday=DayHours(open="10:00", close="19:00"),
-    thursday=DayHours(open="10:00", close="19:00"),
-    friday=DayHours(open="10:00", close="19:00"),
-    saturday=DayHours(open="10:00", close="19:00"),
-    sunday=DayHours(),  # Closed
+    monday=DayHours(open="10:00", close="23:00"),
+    tuesday=DayHours(open="10:00", close="23:00"),
+    wednesday=DayHours(open="10:00", close="23:00"),
+    thursday=DayHours(open="10:00", close="23:00"),
+    friday=DayHours(open="10:00", close="02:00"),
+    saturday=DayHours(open="10:00", close="02:00"),
+    sunday=DayHours(open="10:00", close="02:00"),
 )
 
 
@@ -2426,15 +2467,23 @@ async def _get_shop_hours_doc() -> dict:
     return {"hours": hours, "closures": closures, "closed_today_date": closed_today_date}
 
 
+def _hhmm_to_min(s: str) -> int:
+    h, m = s.split(":")
+    return int(h) * 60 + int(m)
+
+
 def _compute_open_status(hours: dict, closures: list, closed_today_date: Optional[str]) -> dict:
-    """Compute whether the shop is currently open, with a short reason."""
+    """Compute whether the shop is currently open, with a short reason.
+    Supports overnight schedules (e.g., 10:00 → 02:00 means closes next day at 02:00)."""
     now = datetime.now()
     today_iso = now.strftime("%Y-%m-%d")
     weekday_name = DAYS_OF_WEEK[now.weekday()]
+    today_label = DAY_LABELS_FR.get(weekday_name, "")
+    cur_min = now.hour * 60 + now.minute
 
     # 1. "Closed today" toggle takes precedence
     if closed_today_date == today_iso:
-        return {"is_open": False, "reason": "Fermé exceptionnellement aujourd'hui", "today_label": DAY_LABELS_FR.get(weekday_name, "")}
+        return {"is_open": False, "reason": "Fermé exceptionnellement aujourd'hui", "today_label": today_label}
 
     # 2. Active closure period?
     for c in closures or []:
@@ -2445,48 +2494,97 @@ def _compute_open_status(hours: dict, closures: list, closed_today_date: Optiona
             return {
                 "is_open": False,
                 "reason": f"{base_reason} (du {start} au {end})",
-                "today_label": DAY_LABELS_FR.get(weekday_name, ""),
+                "today_label": today_label,
             }
 
-    # 3. Regular hours for today
+    # 3. Today's regular hours
     today_hours = (hours or {}).get(weekday_name) or {}
     open_str = today_hours.get("open")
     close_str = today_hours.get("close")
-    if not open_str or not close_str:
-        return {"is_open": False, "reason": "Fermé aujourd'hui", "today_label": DAY_LABELS_FR.get(weekday_name, "")}
 
-    cur_min = now.hour * 60 + now.minute
-    try:
-        oh, om = map(int, open_str.split(":"))
-        ch, cm = map(int, close_str.split(":"))
-    except Exception:
-        return {"is_open": False, "reason": "Horaires non configurés", "today_label": DAY_LABELS_FR.get(weekday_name, "")}
-    open_min = oh * 60 + om
-    close_min = ch * 60 + cm
+    if open_str and close_str:
+        try:
+            open_min = _hhmm_to_min(open_str)
+            close_min = _hhmm_to_min(close_str)
+        except Exception:
+            return {"is_open": False, "reason": "Horaires non configurés", "today_label": today_label}
 
-    if open_min <= cur_min < close_min:
-        return {
-            "is_open": True,
-            "reason": f"Ouvert jusqu'à {close_str}",
-            "today_label": DAY_LABELS_FR.get(weekday_name, ""),
-            "open": open_str,
-            "close": close_str,
-        }
-    if cur_min < open_min:
-        return {
-            "is_open": False,
-            "reason": f"Ouvre à {open_str}",
-            "today_label": DAY_LABELS_FR.get(weekday_name, ""),
-            "open": open_str,
-            "close": close_str,
-        }
-    return {
-        "is_open": False,
-        "reason": f"Fermé depuis {close_str}",
-        "today_label": DAY_LABELS_FR.get(weekday_name, ""),
-        "open": open_str,
-        "close": close_str,
-    }
+        if close_min > open_min:
+            # Same-day schedule
+            if open_min <= cur_min < close_min:
+                closes_in = close_min - cur_min
+                return {
+                    "is_open": True,
+                    "reason": f"Ouvert jusqu'à {close_str}",
+                    "today_label": today_label,
+                    "open": open_str,
+                    "close": close_str,
+                    "closes_in_minutes": closes_in,
+                    "closing_soon": closes_in <= 120,
+                }
+            if cur_min < open_min:
+                return {
+                    "is_open": False,
+                    "reason": f"Ouvre à {open_str}",
+                    "today_label": today_label,
+                    "open": open_str,
+                    "close": close_str,
+                }
+            # cur_min >= close_min → fell through to "Fermé depuis HH:MM"
+            return {
+                "is_open": False,
+                "reason": f"Fermé depuis {close_str}",
+                "today_label": today_label,
+                "open": open_str,
+                "close": close_str,
+            }
+        else:
+            # Overnight schedule (e.g. 10:00 → 02:00). Open if cur >= open OR cur < close.
+            if cur_min >= open_min:
+                # Evening portion: closes after midnight today + close_min
+                closes_in = (1440 - cur_min) + close_min
+                return {
+                    "is_open": True,
+                    "reason": f"Ouvert jusqu'à {close_str} (du lendemain)",
+                    "today_label": today_label,
+                    "open": open_str,
+                    "close": close_str,
+                    "closes_in_minutes": closes_in,
+                    "closing_soon": closes_in <= 120,
+                }
+            # Else: not yet opened today — fall through (might be inside yesterday's overnight window)
+
+    # 4. Check whether yesterday had an overnight schedule still ongoing
+    yesterday = now - timedelta(days=1)
+    y_name = DAYS_OF_WEEK[yesterday.weekday()]
+    y_hours = (hours or {}).get(y_name) or {}
+    y_open = y_hours.get("open")
+    y_close = y_hours.get("close")
+    if y_open and y_close:
+        try:
+            y_open_min = _hhmm_to_min(y_open)
+            y_close_min = _hhmm_to_min(y_close)
+        except Exception:
+            y_close_min = None
+        if y_close_min is not None and y_close_min <= y_open_min and cur_min < y_close_min:
+            closes_in = y_close_min - cur_min
+            return {
+                "is_open": True,
+                "reason": f"Ouvert jusqu'à {y_close}",
+                "today_label": today_label,
+                "open": y_open,
+                "close": y_close,
+                "closes_in_minutes": closes_in,
+                "closing_soon": closes_in <= 120,
+            }
+
+    # 5. Closed today, with hints based on configured hours
+    if open_str and close_str:
+        if cur_min < _hhmm_to_min(open_str):
+            return {"is_open": False, "reason": f"Ouvre à {open_str}", "today_label": today_label, "open": open_str, "close": close_str}
+        return {"is_open": False, "reason": f"Fermé depuis {close_str}", "today_label": today_label, "open": open_str, "close": close_str}
+
+    return {"is_open": False, "reason": "Fermé aujourd'hui", "today_label": today_label}
 
 
 @api_router.get("/shop/hours")
@@ -2518,11 +2616,12 @@ async def admin_update_shop_hours(payload: ShopHoursUpdate, _admin: dict = Depen
                 status_code=400,
                 detail=f"{DAY_LABELS_FR.get(day, day)} : ouverture et fermeture doivent être définies ensemble.",
             )
-        if open_v and close_v and open_v >= close_v:
+        if open_v and close_v and open_v == close_v:
             raise HTTPException(
                 status_code=400,
-                detail=f"{DAY_LABELS_FR.get(day, day)} : l'heure de fermeture doit être après l'ouverture.",
+                detail=f"{DAY_LABELS_FR.get(day, day)} : l'heure de fermeture doit être différente de l'ouverture.",
             )
+        # Note: close < open is allowed (overnight schedule, e.g. 10:00 → 02:00)
         h[day] = {"open": open_v, "close": close_v}
 
     await db.app_config.update_one(
