@@ -547,6 +547,24 @@ async def create_order(payload: OrderIn, request: Request):
     if delivery_mode == "delivery" and not payload.address.strip():
         raise HTTPException(status_code=400, detail="Adresse de livraison requise")
 
+    # Reject delivery orders when admin has disabled delivery for today
+    if delivery_mode == "delivery":
+        try:
+            doc = await _get_shop_hours_doc()
+            now = datetime.now()
+            today_name = DAYS_OF_WEEK[now.weekday()]
+            day_cfg = (doc.get("hours") or {}).get(today_name) or {}
+            if day_cfg.get("delivery_disabled"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="La livraison n'est pas disponible aujourd'hui. Veuillez choisir le retrait sur place.",
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            # If the check itself fails (e.g. DB error), don't block the order
+            pass
+
     product_ids = [i.product_id for i in payload.items]
     products = await db.products.find({"id": {"$in": product_ids}}, {"_id": 0}).to_list(500)
     product_map = {p["id"]: p for p in products}
@@ -2645,6 +2663,8 @@ DAY_LABELS_FR = {
 class DayHours(BaseModel):
     open: Optional[str] = None   # "10:00" or null → closed all day
     close: Optional[str] = None  # "19:00" or null → closed all day
+    # When True, only on-site / pickup orders are accepted that day; delivery is blocked.
+    delivery_disabled: bool = False
 
 
 class OpeningHours(BaseModel):
@@ -2832,10 +2852,17 @@ async def get_shop_hours():
     """Public endpoint: full opening hours, closures, and current open status."""
     doc = await _get_shop_hours_doc()
     open_status = _compute_open_status(doc["hours"], doc["closures"], doc.get("closed_today_date"))
+    # Expose whether delivery is disabled today (admin can mark a day as "pickup only")
+    now = datetime.now()
+    today_name = DAYS_OF_WEEK[now.weekday()]
+    today_hours = (doc["hours"] or {}).get(today_name) or {}
+    delivery_disabled_today = bool(today_hours.get("delivery_disabled"))
+    open_status["delivery_disabled_today"] = delivery_disabled_today
     return {
         "hours": doc["hours"],
         "closures": doc["closures"],
         "closed_today": doc.get("closed_today_date") == datetime.now().strftime("%Y-%m-%d"),
+        "delivery_disabled_today": delivery_disabled_today,
         "status": open_status,
     }
 
@@ -2862,7 +2889,11 @@ async def admin_update_shop_hours(payload: ShopHoursUpdate, _admin: dict = Depen
                 detail=f"{DAY_LABELS_FR.get(day, day)} : l'heure de fermeture doit être différente de l'ouverture.",
             )
         # Note: close < open is allowed (overnight schedule, e.g. 10:00 → 02:00)
-        h[day] = {"open": open_v, "close": close_v}
+        h[day] = {
+            "open": open_v,
+            "close": close_v,
+            "delivery_disabled": bool(day_hours.get("delivery_disabled")),
+        }
 
     await db.app_config.update_one(
         {"_id": "shop_hours"},

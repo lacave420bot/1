@@ -70,7 +70,7 @@ const DEFAULT_VARIANTS_PRESET: { label: string; price: string }[] = [
 export default function AdminProductsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ filter?: string; stock?: string }>();
-  const { isAuthenticated } = useAdmin();
+  const { isAuthenticated, ready: adminReady } = useAdmin();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,6 +80,7 @@ export default function AdminProductsScreen() {
   const [err, setErr] = useState<string | null>(null);
   const [pickingImage, setPickingImage] = useState(false);
   const [productFilter, setProductFilter] = useState<"all" | "out" | "low" | "coming_soon">("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
 
   useEffect(() => {
     if (params.stock === "out") setProductFilter("out");
@@ -89,9 +90,13 @@ export default function AdminProductsScreen() {
 
   const LOW_STOCK_THRESHOLD = 5;
   const filteredProducts = useMemo(() => {
-    if (productFilter === "all") return products;
-    if (productFilter === "coming_soon") return products.filter((p) => p.coming_soon);
-    return products.filter((p) => {
+    let list = products;
+    if (categoryFilter !== "all") {
+      list = list.filter((p) => p.category_id === categoryFilter);
+    }
+    if (productFilter === "coming_soon") return list.filter((p) => p.coming_soon);
+    if (productFilter === "all") return list;
+    return list.filter((p) => {
       if (p.coming_soon) return false;
       const total = p.total_stock_grams;
       if (total == null) return false;
@@ -100,7 +105,33 @@ export default function AdminProductsScreen() {
       if (productFilter === "low") return total > 0 && total <= threshold;
       return true;
     });
-  }, [products, productFilter]);
+  }, [products, productFilter, categoryFilter]);
+
+  /**
+   * Reorder a product up (-1) or down (+1) in the current filtered list.
+   * To persist correctly while respecting filters, we compute the new GLOBAL order
+   * by swapping the two products' positions in the master list, then send all ids.
+   */
+  const moveProduct = async (idx: number, delta: -1 | 1) => {
+    const target = idx + delta;
+    if (target < 0 || target >= filteredProducts.length) return;
+    const a = filteredProducts[idx];
+    const b = filteredProducts[target];
+    // Swap in the master products list (preserving order of all other products)
+    const next = [...products];
+    const ia = next.findIndex((p) => p.id === a.id);
+    const ib = next.findIndex((p) => p.id === b.id);
+    if (ia < 0 || ib < 0) return;
+    [next[ia], next[ib]] = [next[ib], next[ia]];
+    setProducts(next);
+    try {
+      await api.adminReorderProducts(next.map((p) => p.id));
+    } catch (e: any) {
+      // Rollback on failure
+      setProducts(products);
+      Alert.alert("Erreur", e?.message || "Impossible de réordonner");
+    }
+  };
 
   // ---- Image picker helpers (camera / gallery) ----
   const askGoToSettings = (label: string) => {
@@ -203,12 +234,13 @@ export default function AdminProductsScreen() {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => { if (isAuthenticated) load(); }, [load, isAuthenticated]));
 
-  if (!isAuthenticated) {
-    router.replace("/admin/login");
-    return null;
-  }
+  useEffect(() => {
+    if (adminReady && !isAuthenticated) router.replace("/admin/login");
+  }, [adminReady, isAuthenticated, router]);
+
+  if (!adminReady || !isAuthenticated) return null;
 
   const openCreate = () => {
     setDraft({ ...EMPTY, category_id: categories[0]?.id || "", variants: [...DEFAULT_VARIANTS_PRESET] });
@@ -361,6 +393,37 @@ export default function AdminProductsScreen() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}>
+          {/* Category filter chips — keeps reordering scoped to a single category */}
+          {categories.length > 0 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: spacing.sm, paddingVertical: 2 }}
+              style={{ marginHorizontal: -spacing.lg, paddingHorizontal: spacing.lg }}
+            >
+              <Pressable
+                style={[styles.chip, categoryFilter === "all" && styles.chipActive]}
+                onPress={() => setCategoryFilter("all")}
+                testID="admin-products-cat-all"
+              >
+                <Text style={[styles.chipText, categoryFilter === "all" && styles.chipTextActive]}>
+                  Tout
+                </Text>
+              </Pressable>
+              {categories.map((c) => (
+                <Pressable
+                  key={c.id}
+                  style={[styles.chip, categoryFilter === c.id && styles.chipActive]}
+                  onPress={() => setCategoryFilter(c.id)}
+                  testID={`admin-products-cat-${c.id}`}
+                >
+                  <Text style={[styles.chipText, categoryFilter === c.id && styles.chipTextActive]}>
+                    {c.name}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
           {productFilter !== "all" && (
             <View style={styles.activeFilterBar}>
               <Ionicons
@@ -388,8 +451,28 @@ export default function AdminProductsScreen() {
                 {productFilter === "all" ? "Aucun produit." : "Aucun produit ne correspond à ce filtre."}
               </Text>
             </View>
-          ) : filteredProducts.map((p) => (
+          ) : filteredProducts.map((p, idx) => (
             <View key={p.id} style={styles.row} testID={`admin-product-${p.id}`}>
+              <View style={styles.reorderCol}>
+                <Pressable
+                  onPress={() => moveProduct(idx, -1)}
+                  disabled={idx === 0}
+                  hitSlop={6}
+                  style={[styles.reorderBtn, idx === 0 && styles.reorderBtnDisabled]}
+                  testID={`admin-product-up-${p.id}`}
+                >
+                  <Ionicons name="chevron-up" size={16} color={idx === 0 ? colors.muted : colors.onSurface} />
+                </Pressable>
+                <Pressable
+                  onPress={() => moveProduct(idx, 1)}
+                  disabled={idx === filteredProducts.length - 1}
+                  hitSlop={6}
+                  style={[styles.reorderBtn, idx === filteredProducts.length - 1 && styles.reorderBtnDisabled]}
+                  testID={`admin-product-down-${p.id}`}
+                >
+                  <Ionicons name="chevron-down" size={16} color={idx === filteredProducts.length - 1 ? colors.muted : colors.onSurface} />
+                </Pressable>
+              </View>
               <Image source={{ uri: p.image }} style={styles.thumb} contentFit="cover" />
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowTitle} numberOfLines={1}>{p.name}</Text>
@@ -732,7 +815,17 @@ const styles = StyleSheet.create({
   chip: { height: 36, paddingHorizontal: spacing.lg, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
   chipActive: { backgroundColor: colors.brand, borderColor: colors.brand },
   chipText: { color: colors.onSurface, fontSize: font.sm, fontWeight: "600" },
-  chipTextActive: { color: "#fff", fontWeight: "800" },
+  chipTextActive: { color: colors.onBrandPrimary, fontWeight: "700" },
+  reorderCol: { gap: 4, alignItems: "center", justifyContent: "center" },
+  reorderBtn: {
+    width: 28,
+    height: 24,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceTertiary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reorderBtnDisabled: { opacity: 0.3 },
   switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.md, borderWidth: 1, borderColor: colors.border },
   switchLabel: { color: colors.onSurface, fontSize: font.base, fontWeight: "600" },
   err: { color: colors.error, fontSize: font.sm, fontWeight: "600" },

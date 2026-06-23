@@ -304,6 +304,31 @@ export default function ShopHoursScreen() {
                               🌙 Ferme le lendemain à {d?.close}
                             </Text>
                           )}
+                          {/* Delivery disabled toggle — only meaningful when the day is open */}
+                          <Pressable
+                            style={styles.deliveryToggleRow}
+                            onPress={() => updateDay(key, { delivery_disabled: !d?.delivery_disabled })}
+                            testID={`day-delivery-disabled-${key}`}
+                          >
+                            <View
+                              style={[
+                                styles.checkbox,
+                                d?.delivery_disabled && styles.checkboxChecked,
+                              ]}
+                            >
+                              {d?.delivery_disabled && (
+                                <Ionicons name="checkmark" size={14} color="#fff" />
+                              )}
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.deliveryToggleLabel}>
+                                🛵 Livraison indisponible — uniquement sur place
+                              </Text>
+                              <Text style={styles.deliveryToggleHint}>
+                                Les clients ne pourront commander qu&apos;en retrait sur place ce jour-là.
+                              </Text>
+                            </View>
+                          </Pressable>
                         </View>
                       ) : (
                         <Text style={styles.closedText}>Fermé</Text>
@@ -478,6 +503,29 @@ const styles = StyleSheet.create({
   timeSeparator: { color: colors.muted, fontSize: font.base, fontWeight: "700" },
   overnightHint: { color: "#A78BFA", fontSize: font.xs, fontWeight: "600", marginTop: 2 },
   closedText: { color: colors.muted, fontStyle: "italic" },
+  deliveryToggleRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surfaceTertiary,
+    borderRadius: radius.md,
+    marginTop: 4,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: colors.muted,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 1,
+  },
+  checkboxChecked: { backgroundColor: "#FB923C", borderColor: "#FB923C" },
+  deliveryToggleLabel: { color: colors.onSurface, fontSize: font.sm, fontWeight: "700" },
+  deliveryToggleHint: { color: colors.muted, fontSize: font.xs, marginTop: 2 },
 
   saveBtn: {
     backgroundColor: colors.brand,

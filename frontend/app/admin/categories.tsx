@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -25,7 +25,7 @@ const EMPTY: Draft = { id: "", name: "", icon: "leaf", image: "" };
 
 export default function AdminCategoriesScreen() {
   const router = useRouter();
-  const { isAuthenticated } = useAdmin();
+  const { isAuthenticated, ready: adminReady } = useAdmin();
   const [items, setItems] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -39,9 +39,13 @@ export default function AdminCategoriesScreen() {
     finally { setLoading(false); }
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => { if (isAuthenticated) load(); }, [load, isAuthenticated]));
 
-  if (!isAuthenticated) { router.replace("/admin/login"); return null; }
+  useEffect(() => {
+    if (adminReady && !isAuthenticated) router.replace("/admin/login");
+  }, [adminReady, isAuthenticated, router]);
+
+  if (!adminReady || !isAuthenticated) return null;
 
   const openCreate = () => { setDraft({ ...EMPTY, isNew: true }); setErr(null); setModalOpen(true); };
   const openEdit = (c: Category) => {
@@ -90,6 +94,23 @@ export default function AdminCategoriesScreen() {
         { text: "Annuler", style: "cancel" },
         { text: "Supprimer", style: "destructive", onPress: confirm },
       ]);
+    }
+  };
+
+  // Move a category up (-1) or down (+1) in the list and persist via PUT /admin/categories/reorder.
+  const move = async (idx: number, delta: -1 | 1) => {
+    const target = idx + delta;
+    if (target < 0 || target >= items.length) return;
+    const next = [...items];
+    [next[idx], next[target]] = [next[target], next[idx]];
+    // Optimistic UI update
+    setItems(next);
+    try {
+      await api.adminReorderCategories(next.map((c) => c.id));
+    } catch (e: any) {
+      // Rollback on failure
+      setItems(items);
+      Alert.alert("Erreur", e?.message || "Impossible de réordonner");
     }
   };
 
@@ -207,6 +228,16 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: font.xl, fontWeight: "700", color: colors.onSurface },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   row: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
+  reorderCol: { gap: 4, alignItems: "center", justifyContent: "center" },
+  reorderBtn: {
+    width: 28,
+    height: 24,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceTertiary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reorderBtnDisabled: { opacity: 0.3 },
   catIcon: { width: 48, height: 48, borderRadius: radius.md, backgroundColor: colors.brandSecondary, alignItems: "center", justifyContent: "center" },
   rowTitle: { color: colors.onSurface, fontSize: font.base, fontWeight: "700" },
   rowSub: { color: colors.muted, fontSize: font.sm, marginTop: 2 },

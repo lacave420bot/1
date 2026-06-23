@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -30,6 +30,7 @@ export default function CheckoutScreen() {
   const { user } = useUser();
 
   const [mode, setMode] = useState<DeliveryMode>("delivery");
+  const [deliveryDisabledToday, setDeliveryDisabledToday] = useState(false);
   const [name, setName] = useState(user?.name || "");
   const [phone, setPhone] = useState(user?.phone || "");
   const [address, setAddress] = useState("");
@@ -42,6 +43,20 @@ export default function CheckoutScreen() {
     delivery_mode: DeliveryMode;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Fetch shop hours once to detect "delivery disabled today" and auto-switch to pickup.
+  useEffect(() => {
+    let alive = true;
+    api.getShopHours()
+      .then((res) => {
+        if (!alive) return;
+        const disabled = !!res.delivery_disabled_today;
+        setDeliveryDisabledToday(disabled);
+        if (disabled) setMode("pickup");
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   const canSubmit =
     name.trim().length > 0 &&
@@ -157,22 +172,41 @@ export default function CheckoutScreen() {
           {/* Delivery mode selector */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Mode de récupération</Text>
+            {deliveryDisabledToday && (
+              <View style={styles.deliveryUnavailableBanner}>
+                <Ionicons name="alert-circle" size={18} color="#FB923C" />
+                <Text style={styles.deliveryUnavailableText}>
+                  La livraison est indisponible aujourd&apos;hui — commandes uniquement en retrait sur place.
+                </Text>
+              </View>
+            )}
             <View style={styles.modeRow}>
               <Pressable
-                style={[styles.modeBtn, mode === "delivery" && styles.modeBtnActive]}
-                onPress={() => setMode("delivery")}
+                style={[
+                  styles.modeBtn,
+                  mode === "delivery" && styles.modeBtnActive,
+                  deliveryDisabledToday && styles.modeBtnDisabled,
+                ]}
+                onPress={() => !deliveryDisabledToday && setMode("delivery")}
+                disabled={deliveryDisabledToday}
                 testID="checkout-mode-delivery"
               >
                 <Ionicons
                   name="bicycle"
                   size={22}
-                  color={mode === "delivery" ? "#fff" : colors.muted}
+                  color={
+                    deliveryDisabledToday
+                      ? colors.muted
+                      : mode === "delivery"
+                      ? "#fff"
+                      : colors.muted
+                  }
                 />
                 <Text style={[styles.modeLabel, mode === "delivery" && styles.modeLabelActive]}>
                   Livraison
                 </Text>
                 <Text style={[styles.modeSub, mode === "delivery" && styles.modeSubActive]}>
-                  À domicile
+                  {deliveryDisabledToday ? "Indisponible" : "À domicile"}
                 </Text>
               </Pressable>
               <Pressable
@@ -460,6 +494,25 @@ const styles = StyleSheet.create({
   modeBtnActive: {
     backgroundColor: colors.brand,
     borderColor: colors.brand,
+  },
+  modeBtnDisabled: { opacity: 0.4 },
+  deliveryUnavailableBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: "rgba(251,146,60,0.12)",
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: "rgba(251,146,60,0.3)",
+    marginBottom: spacing.sm,
+  },
+  deliveryUnavailableText: {
+    color: "#FDBA74",
+    fontSize: font.sm,
+    fontWeight: "600",
+    flex: 1,
   },
   modeLabel: { color: colors.onSurface, fontWeight: "700", fontSize: font.base, marginTop: 2 },
   modeLabelActive: { color: "#fff" },

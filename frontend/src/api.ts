@@ -375,7 +375,11 @@ export const api = {
   adminAnalytics: () => request<AdminAnalytics>(`/admin/analytics`),
 };
 
-export type DayHours = { open: string | null; close: string | null };
+export type DayHours = {
+  open: string | null;
+  close: string | null;
+  delivery_disabled?: boolean;
+};
 export type WeeklyHours = {
   monday: DayHours;
   tuesday: DayHours;
@@ -396,6 +400,7 @@ export type ShopHoursResponse = {
   hours: WeeklyHours;
   closures: ShopClosure[];
   closed_today: boolean;
+  delivery_disabled_today?: boolean;
   status: {
     is_open: boolean;
     reason: string;
@@ -404,6 +409,7 @@ export type ShopHoursResponse = {
     close?: string;
     closes_in_minutes?: number;
     closing_soon?: boolean;
+    delivery_disabled_today?: boolean;
   };
 };
 export type AdminAnalytics = {
