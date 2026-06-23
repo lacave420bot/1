@@ -13,6 +13,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { api, type Category, type Product, minVariantPrice } from "@/src/api";
 import { AnimatedPressable } from "@/src/components/AnimatedPressable";
@@ -147,13 +148,14 @@ export default function CatalogScreen() {
             paddingBottom: count > 0 ? 120 : spacing.xl,
             gap: spacing.md,
           }}
-          renderItem={({ item }) => (
-            <AnimatedPressable
-              style={styles.card}
-              scale={0.97}
-              onPress={() => router.push(`/product/${item.id}`)}
-              testID={`catalog-product-${item.id}`}
-            >
+          renderItem={({ item, index }) => (
+            <Animated.View entering={FadeInDown.duration(380).delay(Math.min(index, 8) * 40).springify().damping(18)}>
+              <AnimatedPressable
+                style={styles.card}
+                scale={0.97}
+                onPress={() => router.push(`/product/${item.id}`)}
+                testID={`catalog-product-${item.id}`}
+              >
               <Image source={{ uri: item.image }} style={styles.cardImage} contentFit="cover" />
               {item.coming_soon ? (
                 <View style={styles.comingSoonTag}>
@@ -185,6 +187,7 @@ export default function CatalogScreen() {
                 </View>
               </View>
             </AnimatedPressable>
+            </Animated.View>
           )}
         />
       )}

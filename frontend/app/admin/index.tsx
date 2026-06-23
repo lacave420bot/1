@@ -1,10 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api, type AdminAnalytics } from "@/src/api";
+import { AnimatedPressable } from "@/src/components/AnimatedPressable";
 import { useAdmin } from "@/src/store/admin";
 import { colors, font, radius, shadows, spacing } from "@/src/theme";
 
@@ -38,13 +39,13 @@ export default function AdminIndex() {
       <SafeAreaView style={styles.safe} edges={["top"]}>
         <View style={styles.body}>
           <Text style={styles.title}>Connexion requise</Text>
-          <Pressable
+          <AnimatedPressable
             style={styles.cta}
             onPress={() => router.replace("/admin/login")}
             testID="admin-need-login"
           >
             <Text style={styles.ctaText}>Se connecter</Text>
-          </Pressable>
+          </AnimatedPressable>
         </View>
       </SafeAreaView>
     );
@@ -63,13 +64,13 @@ export default function AdminIndex() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]} testID="admin-index-screen">
       <View style={styles.header}>
-        <Pressable
+        <AnimatedPressable
           style={styles.backBtn}
           onPress={() => router.back()}
           hitSlop={8}
         >
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </AnimatedPressable>
         <Text style={styles.headerTitle}>Administration</Text>
         <View style={{ width: 40 }} />
       </View>
@@ -82,8 +83,9 @@ export default function AdminIndex() {
           </View>
 
           <View style={styles.statsGrid}>
-            <Pressable
+            <AnimatedPressable
               style={[styles.statCard, styles.statCardWide]}
+              scale={0.96}
               onPress={() => router.push("/admin/orders?period=today")}
               testID="stat-card-today"
             >
@@ -94,8 +96,8 @@ export default function AdminIndex() {
               <Text style={styles.statValue} testID="stat-revenue-today">
                 {stats ? formatEuros(stats.revenue_today) : "—"}
               </Text>
-            </Pressable>
-            <Pressable
+            </AnimatedPressable>
+            <AnimatedPressable
               style={[styles.statCard, styles.statCardWide]}
               onPress={() => router.push("/admin/orders?period=week")}
               testID="stat-card-week"
@@ -107,8 +109,8 @@ export default function AdminIndex() {
               <Text style={styles.statValue} testID="stat-revenue-week">
                 {stats ? formatEuros(stats.revenue_week) : "—"}
               </Text>
-            </Pressable>
-            <Pressable
+            </AnimatedPressable>
+            <AnimatedPressable
               style={styles.statCard}
               onPress={() => router.push("/admin/orders?filter=active")}
               testID="stat-card-pending"
@@ -120,8 +122,8 @@ export default function AdminIndex() {
               <Text style={[styles.statValue, styles.statValueSmall]} testID="stat-pending">
                 {stats ? `${stats.pending_orders}` : "—"}
               </Text>
-            </Pressable>
-            <Pressable
+            </AnimatedPressable>
+            <AnimatedPressable
               style={styles.statCard}
               onPress={() => router.push("/admin/products?stock=out")}
               testID="stat-card-out"
@@ -133,8 +135,8 @@ export default function AdminIndex() {
               <Text style={[styles.statValue, styles.statValueSmall]} testID="stat-out-of-stock">
                 {stats ? `${stats.out_of_stock_products}` : "—"}
               </Text>
-            </Pressable>
-            <Pressable
+            </AnimatedPressable>
+            <AnimatedPressable
               style={styles.statCard}
               onPress={() => router.push("/admin/products?stock=low")}
               testID="stat-card-low"
@@ -146,8 +148,8 @@ export default function AdminIndex() {
               <Text style={[styles.statValue, styles.statValueSmall]} testID="stat-low-stock">
                 {stats ? `${stats.low_stock_variants}` : "—"}
               </Text>
-            </Pressable>
-            <Pressable
+            </AnimatedPressable>
+            <AnimatedPressable
               style={styles.statCard}
               onPress={() => router.push("/admin/products?filter=coming_soon")}
               testID="stat-card-coming-soon"
@@ -159,12 +161,12 @@ export default function AdminIndex() {
               <Text style={[styles.statValue, styles.statValueSmall]} testID="stat-coming-soon">
                 {stats ? `${stats.coming_soon_products}` : "—"}
               </Text>
-            </Pressable>
+            </AnimatedPressable>
           </View>
         </View>
 
         {items.map((it) => (
-          <Pressable
+          <AnimatedPressable
             key={it.id}
             style={styles.row}
             onPress={() => router.push(it.path)}
@@ -175,10 +177,10 @@ export default function AdminIndex() {
             </View>
             <Text style={styles.rowLabel}>{it.label}</Text>
             <Ionicons name="chevron-forward" size={18} color={colors.muted} />
-          </Pressable>
+          </AnimatedPressable>
         ))}
 
-        <Pressable
+        <AnimatedPressable
           style={[styles.row, { borderColor: colors.error }]}
           onPress={async () => {
             await logout();
@@ -190,7 +192,7 @@ export default function AdminIndex() {
             <Ionicons name="log-out-outline" size={20} color="#FCA5A5" />
           </View>
           <Text style={[styles.rowLabel, { color: colors.error }]}>Déconnexion</Text>
-        </Pressable>
+        </AnimatedPressable>
       </ScrollView>
     </SafeAreaView>
   );
