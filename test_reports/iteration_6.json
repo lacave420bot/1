@@ -1,0 +1,32 @@
+{
+  "summary": "Iteration 6 — Regression re-test of the HIGH bug from iteration 5 (POST /api/admin/products HTTP 500 when stock_unit omitted). Main agent's fix at /app/backend/server.py:1559 — `ProductIn.stock_unit: str = 'g'` (default changed from `Optional[str] = None`) — is verified. Re-ran the full iteration-5 pytest suite against the live preview (https://order-basket-5.preview.emergentagent.com): 11/11 PASS (was 10/11). • test_stock_unit_defaults_to_g now passes: POST without stock_unit returns 200 and returned product has stock_unit='g'. • test_create_product_persists_new_fields still passes: POST with explicit stock_unit='ml' returns 200 and persists it. • test_litre_label_decrements_shared_stock still passes: POST with stock_unit='L' creates correctly. • Quick regression — PATCH /api/admin/products/{id} (test_patch_product_updates_initial_stock) still works: total_stock_grams=500 + original_price=9.99 update succeeds AND initial_stock_grams auto-syncs to 500. • Quick smoke — GET /api/shop/hours (test_get_shop_hours_exposes_flag) still returns delivery_disabled_today as a top-level bool and inside .status. No regressions detected. No mocked APIs.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_new_features_v5.py",
+    "/app/test_reports/pytest/iteration_6.xml"
+  ],
+  "action_items": [
+    "[Carried over from iter 3-5, NOT re-tested here] Frontend RN warnings still pending: migrate shadow* → boxShadow in /app/frontend/src/theme.ts; remove stale Stack.Screen name='admin' in /app/frontend/app/(tabs)/_layout.tsx; replace deprecated `pointerEvents` prop with `style.pointerEvents`; run `npx expo install expo expo-font expo-router` for SDK patch alignment.",
+    "[Carried over, optional] Consider Pydantic Field(ge=0) on Product.total_stock_grams to reject negative restock values."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/server.py:1559 — Fix confirmed: ProductIn.stock_unit now defaults to 'g' (str) matching Product.stock_unit:str='g'. ProductIn/Product schemas are now aligned. The inline comment ('must default to \"g\" (matches Product.stock_unit), not None') is a nice future-proofing touch.",
+    "/app/backend/server.py:1581-1589 — admin_create_product unchanged; payload.dict() → Product(**data) flow now safe because no ProductIn field that maps to a non-Optional Product field can be None.",
+    "/app/backend/server.py:1563-1578 — ProductPatch still uses Optional[str] = None for stock_unit, which is correct for PATCH (exclude_unset=True semantics handle it). Confirmed PATCH path still passes."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (11/11 PASS — up from 90.9% in iter 5)", "frontend": "not tested this iteration (backend-only request)"},
+  "seed_data_creation": "Tests create-and-cleanup their own products within the same test (TEST_StockUnitProduct, TEST_Patch, TEST_Default, TEST_LitreProduct, TEST_UnitesProduct, TEST_LegacyGram). delivery_disabled flag is restored to its original value at end of each toggle test. Net-zero seed delta. A few TEST_v5 guest orders remain in db.orders (no DELETE API for guest orders) — same residual as iter 5.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend test file /app/backend/tests/test_new_features_v5.py is now 11/11 green. The iteration-5 HIGH bug (stock_unit default mismatch) is fully resolved. For future iterations, this suite remains the best regression for: product CRUD with stock_unit/original_price/initial_stock_grams, variant_grams() parsing across g/L/unité labels, shop-hours delivery_disabled_today round-trip, order creation gating on delivery_disabled, and category/product reorder persistence. Admin PIN 2937 verified working. No outstanding backend bugs from iter 5 remain."
+}

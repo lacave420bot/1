@@ -1556,7 +1556,7 @@ class ProductIn(BaseModel):
     variants: List[WeightVariant] = []
     total_stock_grams: Optional[float] = None
     low_stock_threshold_grams: Optional[float] = None
-    stock_unit: Optional[str] = None  # "g", "ml", "L", "unité"
+    stock_unit: str = "g"  # must default to "g" (matches Product.stock_unit), not None
     original_price: Optional[float] = None
 
 
