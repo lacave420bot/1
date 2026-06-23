@@ -1990,6 +1990,7 @@ async def telegram_webhook(request: Request):
     expected = await _ensure_webhook_secret()
     incoming = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
     if not incoming or incoming != expected:
+        logger.warning("[telegram] webhook secret mismatch — got %r, expected %r", incoming[:8] + "…" if incoming else "(empty)", expected[:8] + "…")
         return {"ok": True}
 
     try:
@@ -2030,9 +2031,11 @@ async def telegram_webhook(request: Request):
     data = (cb.get("data") or "").strip()
     cb_id = cb.get("id")
     from_chat = str(((cb.get("message") or {}).get("chat") or {}).get("id") or "")
+    logger.info("[telegram] callback received: data=%r chat=%s", data, from_chat)
 
     _, configured_chat = await _get_telegram_config()
     if configured_chat and from_chat and from_chat != str(configured_chat):
+        logger.warning("[telegram] callback rejected — chat %s != configured %s", from_chat, configured_chat)
         await _telegram_answer_callback(cb_id, "Action refusée (chat non autorisé).")
         return {"ok": True}
 
