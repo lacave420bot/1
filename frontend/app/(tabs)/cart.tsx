@@ -18,6 +18,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { api, type Product } from "@/src/api";
 import { AnimatedPressable } from "@/src/components/AnimatedPressable";
 import { useCart, formatPrice, lineKey } from "@/src/store/cart";
+import { useUser } from "@/src/store/user";
 import { colors, font, radius, shadows, spacing } from "@/src/theme";
 
 // Parse grams from variant label ("1 g" → 1, "10 g" → 10), or use explicit `grams` field
@@ -37,6 +38,7 @@ type LineStatus =
 
 export default function CartScreen() {
   const router = useRouter();
+  const { isAuthenticated } = useUser();
   const {
     items, setQuantity, removeItem, updateLine,
     subtotal, discount, total, count,
@@ -400,6 +402,28 @@ export default function CartScreen() {
             )}
           </View>
 
+          {/* Login REQUIRED card */}
+          {!isAuthenticated && (
+            <Pressable
+              style={styles.loginRequiredCard}
+              onPress={() => router.push("/login")}
+              testID="cart-login-required"
+            >
+              <View style={styles.loginRequiredIconWrap}>
+                <Ionicons name="lock-closed" size={20} color="#2AABEE" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.loginRequiredTitle}>
+                  🔐 Connexion requise
+                </Text>
+                <Text style={styles.loginRequiredText}>
+                  Connectez-vous via Telegram pour pouvoir commander et recevoir le suivi de votre commande en direct.
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#2AABEE" />
+            </Pressable>
+          )}
+
           {/* Summary */}
           <View style={styles.summary}>
             <View style={styles.summaryRow}>
@@ -440,18 +464,33 @@ export default function CartScreen() {
               </Text>
             </View>
           )}
-          <AnimatedPressable
-            style={[styles.ctaBtn, hasBlockingIssue && styles.ctaBtnDisabled]}
-            scale={0.97}
-            haptic="medium"
-            disabled={hasBlockingIssue}
-            onPress={() => router.push("/checkout")}
-            testID="cart-checkout-btn"
-          >
-            <Text style={styles.ctaText}>
-              Passer la commande · {formatPrice(total)}
-            </Text>
-          </AnimatedPressable>
+          {!isAuthenticated ? (
+            <AnimatedPressable
+              style={[styles.ctaBtn, styles.ctaBtnLogin]}
+              scale={0.97}
+              haptic="medium"
+              onPress={() => router.push("/login")}
+              testID="cart-login-cta"
+            >
+              <View style={styles.ctaInner}>
+                <Ionicons name="paper-plane" size={18} color="#fff" />
+                <Text style={styles.ctaText}>Se connecter pour commander</Text>
+              </View>
+            </AnimatedPressable>
+          ) : (
+            <AnimatedPressable
+              style={[styles.ctaBtn, hasBlockingIssue && styles.ctaBtnDisabled]}
+              scale={0.97}
+              haptic="medium"
+              disabled={hasBlockingIssue}
+              onPress={() => router.push("/checkout")}
+              testID="cart-checkout-btn"
+            >
+              <Text style={styles.ctaText}>
+                Passer la commande · {formatPrice(total)}
+              </Text>
+            </AnimatedPressable>
+          )}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -560,6 +599,28 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     ...shadows.card,
   },
+
+  // Login REQUIRED card (guest users must authenticate to checkout)
+  loginRequiredCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: "rgba(42,171,238,0.10)",
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: "rgba(42,171,238,0.35)",
+    padding: spacing.md,
+  },
+  loginRequiredIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(42,171,238,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loginRequiredTitle: { color: colors.onSurface, fontWeight: "700", fontSize: font.base },
+  loginRequiredText: { color: colors.muted, fontSize: font.sm, marginTop: 2 },
   sectionHeader: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   sectionTitle: { fontSize: font.lg, fontWeight: "700", color: colors.onSurface },
 
@@ -673,6 +734,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   ctaBtnDisabled: { backgroundColor: colors.surfaceTertiary, opacity: 0.85 },
+  ctaBtnLogin: { backgroundColor: "#2AABEE" },
+  ctaInner: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   ctaText: { color: "#fff", fontSize: font.lg, fontWeight: "700" },
 
   // Empty
