@@ -19,25 +19,11 @@ import Animated, {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@/src/components/AnimatedPressable";
-import { api, type Category, type Order, type Product, type ShopHoursResponse, isLowStock, minVariantPrice } from "@/src/api";
+import { api, type Category, type Product, type ShopHoursResponse, isLowStock, minVariantPrice } from "@/src/api";
 import { useCart, formatPrice } from "@/src/store/cart";
 import { useAdmin } from "@/src/store/admin";
 import { useLoyalty } from "@/src/store/loyalty";
 import { colors, font, gradients, radius, shadows, spacing } from "@/src/theme";
-
-function formatRelativeDate(iso: string): string {
-  try {
-    const d = new Date(iso);
-    const now = Date.now();
-    const diffMin = Math.floor((now - d.getTime()) / 60000);
-    if (diffMin < 1) return "À l'instant";
-    if (diffMin < 60) return `il y a ${diffMin} min`;
-    if (diffMin < 1440) return `il y a ${Math.floor(diffMin / 60)} h`;
-    return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
-  } catch {
-    return "";
-  }
-}
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -50,7 +36,6 @@ export default function HomeScreen() {
   const [comingSoon, setComingSoon] = useState<Product[]>([]);
   const [promoList, setPromoList] = useState<Product[]>([]);
   const [lowStock, setLowStock] = useState<Product[]>([]);
-  const [recentOrders, setRecentOrders] = useState<Order[]>([]);
   const [shopStatus, setShopStatus] = useState<ShopHoursResponse["status"] | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -71,23 +56,12 @@ export default function HomeScreen() {
       setPromoList(all.filter((p) => p.promo && !p.coming_soon));
       setLowStock(all.filter((p) => isLowStock(p)));
       if (shop) setShopStatus(shop.status);
-      // Only load orders list for the admin (PIN-authenticated)
-      if (isAdmin) {
-        try {
-          const adminOrders = await api.adminListOrders();
-          setRecentOrders(adminOrders.slice(0, 3));
-        } catch {
-          setRecentOrders([]);
-        }
-      } else {
-        setRecentOrders([]);
-      }
     } catch (e: any) {
       setError(e?.message || "Erreur de chargement.");
     } finally {
       setLoading(false);
     }
-  }, [isAdmin]);
+  }, []);
 
   useEffect(() => {
     load();
@@ -96,12 +70,7 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       refreshLoyalty();
-      if (isAdmin) {
-        api.adminListOrders().then((o) => setRecentOrders(o.slice(0, 3))).catch(() => {});
-      } else {
-        setRecentOrders([]);
-      }
-    }, [isAdmin, refreshLoyalty]),
+    }, [refreshLoyalty]),
   );
 
   const onRefresh = useCallback(async () => {
@@ -341,63 +310,6 @@ export default function HomeScreen() {
             onPressItem={(p) => router.push(`/product/${p.id}`)}
             testIdPrefix="home-low-stock"
           />
-        )}
-
-        {/* Activity feed — recent orders */}
-        {recentOrders.length > 0 && (
-          <>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Activité</Text>
-              <Pressable onPress={() => router.push("/admin/orders")}>
-                <Text style={styles.linkText}>Tout voir</Text>
-              </Pressable>
-            </View>
-            <Animated.View
-              entering={FadeInDown.duration(500).delay(900)}
-              style={styles.activityList}
-            >
-              {recentOrders.map((o) => (
-                <AnimatedPressable
-                  key={o.id}
-                  style={styles.activityRow}
-                  onPress={() => router.push(`/order/${o.id}`)}
-                  testID={`home-activity-${o.id}`}
-                  scale={0.98}
-                >
-                  <View
-                    style={[
-                      styles.activityIcon,
-                      {
-                        backgroundColor:
-                          o.status === "Livré" ? "#0F2A20" : "#11233F",
-                      },
-                    ]}
-                  >
-                    <Ionicons
-                      name={
-                        o.status === "Livré"
-                          ? "checkmark-circle"
-                          : o.status === "En livraison"
-                          ? "bicycle"
-                          : "restaurant"
-                      }
-                      size={20}
-                      color={o.status === "Livré" ? "#4ADE80" : "#7AB1FF"}
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.activityTitle}>
-                      Commande #{o.id.slice(0, 6).toUpperCase()}
-                    </Text>
-                    <Text style={styles.activitySub}>
-                      {o.status} · {formatRelativeDate(o.created_at)}
-                    </Text>
-                  </View>
-                  <Text style={styles.activityAmount}>−{formatPrice(o.total)}</Text>
-                </AnimatedPressable>
-              ))}
-            </Animated.View>
-          </>
         )}
 
         <View style={{ height: count > 0 ? 110 : spacing.xl }} />
@@ -654,34 +566,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
-  // Activity
-  activityList: {
-    marginHorizontal: spacing.lg,
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: "hidden",
-  },
-  activityRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: spacing.md,
-    gap: spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  activityIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  activityTitle: { color: colors.onSurface, fontSize: font.base, fontWeight: "700" },
-  activitySub: { color: colors.muted, fontSize: font.sm, marginTop: 2 },
-  activityAmount: { color: colors.onSurface, fontSize: font.base, fontWeight: "700" },
 
   // Floating cart
   floatingCart: {

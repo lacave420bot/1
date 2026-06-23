@@ -1368,6 +1368,38 @@ async def send_low_stock_alert(alerts: list[dict]) -> None:
         logger.warning("[telegram] low-stock send error: %s", e)
 
 
+async def send_stock_restored_alert(alerts: list[dict]) -> None:
+    """Send a Telegram notification when stock is restored after an order cancellation."""
+    if not alerts:
+        return
+    token, _ = await _get_telegram_config()
+    if not token:
+        return
+    target_chat = await _get_alerts_chat_id()
+    if not target_chat:
+        return
+    lines = ["🔄 <b>Stock restitué (commande annulée)</b>"]
+    for a in alerts:
+        name = _esc(a.get("name") or "")
+        label = _esc(a.get("label") or "")
+        remaining = a.get("remaining", 0)
+        lines.append(f"  ✅ <b>{name} ({label})</b> — stock actuel : {remaining}")
+    text = "\n".join(lines)
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client_h:
+            await client_h.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={
+                    "chat_id": target_chat,
+                    "text": text,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True,
+                },
+            )
+    except Exception as e:
+        logger.warning("[telegram] stock-restored send error: %s", e)
+
+
 class TelegramConfigIn(BaseModel):
     bot_token: str
     chat_id: str = ""
@@ -1724,7 +1756,12 @@ async def admin_update_order(order_id: str, payload: OrderStatusUpdate, _admin: 
 
     # Restock items when an order transitions INTO "Annulée"
     if new_status == "Annulée" and prev_status != "Annulée":
-        await _restock_order_items(before_doc.get("items") or [])
+        restored = await _restock_order_items(before_doc.get("items") or [])
+        if restored:
+            try:
+                await send_stock_restored_alert(restored)
+            except Exception as e:
+                logger.warning("[telegram] stock-restored alert error: %s", e)
     # Re-decrement items if an order is UN-cancelled (back to active state)
     elif prev_status == "Annulée" and new_status != "Annulée":
         await _decrement_order_items(before_doc.get("items") or [])
@@ -1795,8 +1832,9 @@ async def admin_update_order_eta(
     return updated_order
 
 
-async def _restock_order_items(items: list) -> None:
-    """Add back order quantities to the corresponding variants/product."""
+async def _restock_order_items(items: list) -> list[dict]:
+    """Add back order quantities to the corresponding variants/product.
+    Returns a list of stock-restoration alerts for Telegram notification."""
     # Aggregate by (pid, label) and by product for gram-stock
     agg: dict[tuple[str, str], int] = {}
     for it in items or []:
@@ -1817,6 +1855,7 @@ async def _restock_order_items(items: list) -> None:
                 seen_products[pid] = doc
 
     grams_to_add: dict[str, float] = {}
+    restored_alerts: list[dict] = []
     for (pid, label), qty in agg.items():
         product = seen_products.get(pid)
         if not product:
@@ -1832,8 +1871,14 @@ async def _restock_order_items(items: list) -> None:
             changed = False
             for v in variants:
                 if v.get("label") == label and v.get("stock") is not None:
-                    v["stock"] = int(v["stock"]) + qty
+                    before = int(v["stock"])
+                    v["stock"] = before + qty
                     changed = True
+                    restored_alerts.append({
+                        "name": product.get("name"),
+                        "label": label,
+                        "remaining": v["stock"],
+                    })
                     break
             if changed:
                 await db.products.update_one({"id": pid}, {"$set": {"variants": variants}})
@@ -1844,7 +1889,14 @@ async def _restock_order_items(items: list) -> None:
         if not product:
             continue
         cur = float(product.get("total_stock_grams") or 0)
-        await db.products.update_one({"id": pid}, {"$set": {"total_stock_grams": cur + g}})
+        after = cur + g
+        await db.products.update_one({"id": pid}, {"$set": {"total_stock_grams": after}})
+        restored_alerts.append({
+            "name": product.get("name"),
+            "label": f"{after:g} g",
+            "remaining": f"{after:g}",
+        })
+    return restored_alerts
 
 
 async def _decrement_order_items(items: list) -> None:
@@ -2331,7 +2383,12 @@ async def telegram_webhook(request: Request):
     await db.orders.update_one({"id": order_id}, {"$set": {"manual_status": target_status}})
 
     if target_status == "Annulée" and prev_status != "Annulée":
-        await _restock_order_items(before_doc.get("items") or [])
+        restored = await _restock_order_items(before_doc.get("items") or [])
+        if restored:
+            try:
+                await send_stock_restored_alert(restored)
+            except Exception as e:
+                logger.warning("[telegram] stock-restored alert error: %s", e)
     elif prev_status == "Annulée" and target_status != "Annulée":
         await _decrement_order_items(before_doc.get("items") or [])
 
