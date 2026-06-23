@@ -2004,7 +2004,7 @@ async def admin_setup_telegram_webhook(_admin: dict = Depends(require_admin)):
                 json={
                     "url": webhook_url,
                     "secret_token": secret,
-                    "allowed_updates": ["callback_query", "message"],
+                    "allowed_updates": ["callback_query", "message", "channel_post", "my_chat_member"],
                     "drop_pending_updates": True,
                 },
             )
@@ -2055,7 +2055,9 @@ async def telegram_webhook(request: Request):
         return {"ok": True}
 
     # ---- Handle /start <token> messages for customer login ----
-    msg = update.get("message")
+    # Also: persist channel/group/private chat sightings so the admin "Détecter"
+    # picker can show them. We accept "message" AND "channel_post" updates.
+    msg = update.get("message") or update.get("channel_post")
     if msg:
         text = (msg.get("text") or "").strip()
         # Remember chat sighting so the admin "Détecter" picker can show it
@@ -2076,8 +2078,31 @@ async def telegram_webhook(request: Request):
         except Exception as e:
             logger.warning("[telegram] seen_chats persist err: %s", e)
 
-        if text.startswith("/start"):
+        # /start <token> only makes sense from a private chat, not from a channel
+        if text.startswith("/start") and (msg.get("chat") or {}).get("type") == "private":
             await _handle_telegram_start(msg, text)
+        return {"ok": True}
+
+    # ---- my_chat_member: triggered when the bot is added/removed from a chat/channel ----
+    # Use this to also persist the chat so the admin can see it even before a message is sent.
+    mcm = update.get("my_chat_member")
+    if mcm:
+        try:
+            chat = mcm.get("chat") or {}
+            if chat.get("id") is not None:
+                title = chat.get("title") or chat.get("first_name") or chat.get("username") or ""
+                await db.telegram_seen_chats.update_one(
+                    {"id": str(chat["id"])},
+                    {"$set": {
+                        "id": str(chat["id"]),
+                        "type": chat.get("type"),
+                        "title": title,
+                        "last_seen": datetime.now(timezone.utc).isoformat(),
+                    }},
+                    upsert=True,
+                )
+        except Exception as e:
+            logger.warning("[telegram] my_chat_member persist err: %s", e)
         return {"ok": True}
 
     cb = update.get("callback_query")
