@@ -146,6 +146,7 @@ class Product(BaseModel):
     unit: Optional[str] = None
     popular: bool = False
     promo: bool = False
+    coming_soon: bool = False  # "À venir" toggle — hides add-to-cart and shows badge
     variants: List[WeightVariant] = []
     # Shared inventory in grams (preferred for cannabis-style products).
     # When set, variant availability is computed by comparing variant.grams against
@@ -994,39 +995,49 @@ async def send_telegram_order_notification(order: Order) -> None:
 
 
 def _order_action_keyboard(order_id: str, current_status: str, delivery_mode: str = "delivery") -> dict:
-    """Build the inline keyboard shown under each order notification.
+    """Build a CONTEXTUAL inline keyboard: show only the next logical actions.
 
-    Uses the new 5-status workflow. Telegram's `callback_data` is limited to
-    64 bytes, so we use compact codes (`s:{order_id}:{code}`) where code is
-    a single character from STATUS_CODE_TO_LABEL.
-    Filters the "ready" / "out for delivery" buttons based on delivery_mode:
-      - pickup orders never show "Commande au point de livraison"
-      - delivery orders never show "Commande prête (sur place)"
-    Buttons are split into rows of 2.
+    Workflow per delivery_mode:
+      pickup:   En cours → En préparation → Commande prête
+      delivery: En cours → En préparation → Commande au point de livraison
+    + "Annuler" available at any time except already cancelled
+    + "Remettre en cours" only from terminal/cancelled states
+
+    Compact callback codes (s:{order_id}:{0..4}) to fit Telegram's 64-byte limit.
     """
-    cur = current_status or "En cours"
-    is_cancelled = cur == "Annulée"
+    cur = normalize_status(current_status, delivery_mode)
     is_pickup = (delivery_mode or "delivery") == "pickup"
+    final_label = "Marquer comme prête" if is_pickup else "Marquer en livraison"
+    final_code = "2" if is_pickup else "3"
+    final_emoji = "✅" if is_pickup else "🚚"
 
-    candidates: list[tuple[str, str, str]] = []  # (label, full_status, code)
-    if cur != "En cours":
-        candidates.append(("🔄 En cours", "En cours", "0"))
-    if cur != "En préparation":
-        candidates.append(("👨‍🍳 En préparation", "En préparation", "1"))
-    # Show only the relevant "final" button based on the order's delivery mode
-    if is_pickup and cur != "Commande prête":
-        candidates.append(("✅ Prête (sur place)", "Commande prête", "2"))
-    if not is_pickup and cur != "Commande au point de livraison":
-        candidates.append(("🚚 Au point de livraison", "Commande au point de livraison", "3"))
-    if not is_cancelled:
-        candidates.append(("❌ Annuler", "Annulée", "4"))
+    rows: list[list[dict]] = []
 
-    buttons = [
-        {"text": label, "callback_data": f"s:{order_id}:{code}"}
-        for label, _full, code in candidates
-    ]
-    # Split into rows of 2
-    rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    if cur == "En cours":
+        rows.append([
+            {"text": "👨‍🍳 Commencer la préparation", "callback_data": f"s:{order_id}:1"},
+        ])
+        rows.append([
+            {"text": "❌ Annuler", "callback_data": f"s:{order_id}:4"},
+        ])
+    elif cur == "En préparation":
+        rows.append([
+            {"text": f"{final_emoji} {final_label}", "callback_data": f"s:{order_id}:{final_code}"},
+        ])
+        rows.append([
+            {"text": "↩️ Retour", "callback_data": f"s:{order_id}:0"},
+            {"text": "❌ Annuler", "callback_data": f"s:{order_id}:4"},
+        ])
+    elif cur in ("Commande prête", "Commande au point de livraison"):
+        rows.append([
+            {"text": "↩️ Retour préparation", "callback_data": f"s:{order_id}:1"},
+            {"text": "❌ Annuler", "callback_data": f"s:{order_id}:4"},
+        ])
+    elif cur == "Annulée":
+        rows.append([
+            {"text": "🔄 Remettre en cours", "callback_data": f"s:{order_id}:0"},
+        ])
+
     return {"inline_keyboard": rows}
 
 
@@ -1471,6 +1482,7 @@ class ProductIn(BaseModel):
     unit: Optional[str] = None
     popular: bool = False
     promo: bool = False
+    coming_soon: bool = False
     variants: List[WeightVariant] = []
 
 
@@ -1484,6 +1496,7 @@ class ProductPatch(BaseModel):
     unit: Optional[str] = None
     popular: Optional[bool] = None
     promo: Optional[bool] = None
+    coming_soon: Optional[bool] = None
     variants: Optional[List[WeightVariant]] = None
 
 
@@ -2754,11 +2767,15 @@ async def admin_analytics(_admin: dict = Depends(require_admin)):
         if st in ("En cours", "En préparation"):
             pending += 1
 
-    # Out-of-stock / low-stock from products
+    # Out-of-stock / low-stock / coming-soon from products
     products = await db.products.find({}, {"_id": 0}).to_list(2000)
     out_of_stock = 0
     low_stock = 0
+    coming_soon = 0
     for p in products:
+        if p.get("coming_soon"):
+            coming_soon += 1
+            continue  # "À venir" products are not counted as out-of-stock
         total_g = p.get("total_stock_grams")
         if total_g is not None:
             threshold = p.get("low_stock_threshold_grams") or DEFAULT_LOW_STOCK_THRESHOLD
@@ -2783,6 +2800,7 @@ async def admin_analytics(_admin: dict = Depends(require_admin)):
         "pending_orders": pending,
         "out_of_stock_products": out_of_stock,
         "low_stock_variants": low_stock,
+        "coming_soon_products": coming_soon,
     }
 
 

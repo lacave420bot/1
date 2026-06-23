@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -87,6 +87,7 @@ function formatDate(iso: string): string {
 
 export default function AdminOrdersScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ filter?: string; period?: string }>();
   const { isAuthenticated, ready: adminReady } = useAdmin();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -96,6 +97,14 @@ export default function AdminOrdersScreen() {
   const [updating, setUpdating] = useState(false);
   const [etaInput, setEtaInput] = useState<string>("");
   const [savingEta, setSavingEta] = useState(false);
+
+  // Apply filter from URL params (e.g., clicked from analytics card)
+  useEffect(() => {
+    const f = params.filter;
+    if (f === "active") setFilter("active");
+    else if (f === "ready") setFilter("ready");
+    else if (f === "cancelled") setFilter("Annulée");
+  }, [params.filter]);
 
   // Multi-select state
   const [selectMode, setSelectMode] = useState(false);

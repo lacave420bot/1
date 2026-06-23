@@ -27,6 +27,7 @@ export type Product = {
   unit?: string | null;
   popular?: boolean;
   promo?: boolean;
+  coming_soon?: boolean;
   variants?: WeightVariant[];
   total_stock_grams?: number | null;
   low_stock_threshold_grams?: number | null;
@@ -189,6 +190,7 @@ export const api = {
     search?: string;
     popular?: boolean;
     promo?: boolean;
+    coming_soon?: boolean;
   } = {}) => {
     const q = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
@@ -380,4 +382,5 @@ export type AdminAnalytics = {
   pending_orders: number;
   out_of_stock_products: number;
   low_stock_variants: number;
+  coming_soon_products: number;
 };

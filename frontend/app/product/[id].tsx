@@ -226,14 +226,22 @@ export default function ProductDetailScreen() {
           </Pressable>
         </View>
         <Pressable
-          style={[styles.addBtn, isOutOfStock && styles.addBtnDisabled]}
+          style={[styles.addBtn, (isOutOfStock || !!product?.coming_soon) && styles.addBtnDisabled]}
           onPress={handleAdd}
-          disabled={isOutOfStock}
+          disabled={isOutOfStock || !!product?.coming_soon}
           testID="product-add-btn"
         >
-          <Ionicons name={isOutOfStock ? "ban" : "bag-add"} size={18} color="#fff" />
+          <Ionicons
+            name={product?.coming_soon ? "rocket" : isOutOfStock ? "ban" : "bag-add"}
+            size={18}
+            color="#fff"
+          />
           <Text style={styles.addBtnText}>
-            {isOutOfStock ? "Rupture" : `Ajouter · ${formatPrice(displayPrice * qty)}`}
+            {product?.coming_soon
+              ? "🚧 Bientôt disponible"
+              : isOutOfStock
+              ? "Rupture"
+              : `Ajouter · ${formatPrice(displayPrice * qty)}`}
           </Text>
         </Pressable>
       </View>

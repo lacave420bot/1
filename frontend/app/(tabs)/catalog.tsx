@@ -155,11 +155,15 @@ export default function CatalogScreen() {
               testID={`catalog-product-${item.id}`}
             >
               <Image source={{ uri: item.image }} style={styles.cardImage} contentFit="cover" />
-              {item.promo && (
+              {item.coming_soon ? (
+                <View style={styles.comingSoonTag}>
+                  <Text style={styles.comingSoonText}>🚧 À venir</Text>
+                </View>
+              ) : item.promo ? (
                 <View style={styles.promoTag}>
                   <Text style={styles.promoTagText}>Promo</Text>
                 </View>
-              )}
+              ) : null}
               <View style={styles.cardBody}>
                 <Text style={styles.cardTitle} numberOfLines={1}>
                   {item.name}
@@ -172,7 +176,11 @@ export default function CatalogScreen() {
                   </Text>
                 )}
                 <View style={styles.cardFooter}>
-                  <Text style={styles.cardPriceFrom}>dès {formatPrice(minVariantPrice(item))}</Text>
+                  {item.coming_soon ? (
+                    <Text style={[styles.cardPriceFrom, { color: "#A78BFA" }]}>Bientôt disponible</Text>
+                  ) : (
+                    <Text style={styles.cardPriceFrom}>dès {formatPrice(minVariantPrice(item))}</Text>
+                  )}
                   <Ionicons name="chevron-forward" size={18} color={colors.muted} />
                 </View>
               </View>
@@ -269,6 +277,16 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
   },
   promoTagText: { color: "#fff", fontSize: 10, fontWeight: "700" },
+  comingSoonTag: {
+    position: "absolute",
+    top: spacing.sm,
+    left: spacing.sm,
+    backgroundColor: "rgba(167,139,250,0.95)",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+  },
+  comingSoonText: { color: "#fff", fontSize: 10, fontWeight: "700", letterSpacing: 0.3 },
   cardBody: { padding: spacing.md, gap: 2 },
   cardTitle: { fontSize: font.base, fontWeight: "700", color: colors.onSurface },
   cardUnit: { fontSize: font.sm, color: colors.muted },

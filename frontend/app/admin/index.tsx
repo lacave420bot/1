@@ -82,7 +82,11 @@ export default function AdminIndex() {
           </View>
 
           <View style={styles.statsGrid}>
-            <View style={[styles.statCard, styles.statCardWide]}>
+            <Pressable
+              style={[styles.statCard, styles.statCardWide]}
+              onPress={() => router.push("/admin/orders?period=today")}
+              testID="stat-card-today"
+            >
               <View style={styles.statHeader}>
                 <Ionicons name="today" size={16} color="#4ADE80" />
                 <Text style={styles.statLabel}>Recettes aujourd&apos;hui</Text>
@@ -90,8 +94,12 @@ export default function AdminIndex() {
               <Text style={styles.statValue} testID="stat-revenue-today">
                 {stats ? formatEuros(stats.revenue_today) : "—"}
               </Text>
-            </View>
-            <View style={[styles.statCard, styles.statCardWide]}>
+            </Pressable>
+            <Pressable
+              style={[styles.statCard, styles.statCardWide]}
+              onPress={() => router.push("/admin/orders?period=week")}
+              testID="stat-card-week"
+            >
               <View style={styles.statHeader}>
                 <Ionicons name="calendar" size={16} color="#7AB1FF" />
                 <Text style={styles.statLabel}>Cette semaine</Text>
@@ -99,8 +107,12 @@ export default function AdminIndex() {
               <Text style={styles.statValue} testID="stat-revenue-week">
                 {stats ? formatEuros(stats.revenue_week) : "—"}
               </Text>
-            </View>
-            <View style={styles.statCard}>
+            </Pressable>
+            <Pressable
+              style={styles.statCard}
+              onPress={() => router.push("/admin/orders?filter=active")}
+              testID="stat-card-pending"
+            >
               <View style={styles.statHeader}>
                 <Ionicons name="time" size={16} color="#FBBF24" />
                 <Text style={styles.statLabel}>En attente</Text>
@@ -108,8 +120,12 @@ export default function AdminIndex() {
               <Text style={[styles.statValue, styles.statValueSmall]} testID="stat-pending">
                 {stats ? `${stats.pending_orders}` : "—"}
               </Text>
-            </View>
-            <View style={styles.statCard}>
+            </Pressable>
+            <Pressable
+              style={styles.statCard}
+              onPress={() => router.push("/admin/products?stock=out")}
+              testID="stat-card-out"
+            >
               <View style={styles.statHeader}>
                 <Ionicons name="alert-circle" size={16} color="#FCA5A5" />
                 <Text style={styles.statLabel}>Rupture</Text>
@@ -117,8 +133,12 @@ export default function AdminIndex() {
               <Text style={[styles.statValue, styles.statValueSmall]} testID="stat-out-of-stock">
                 {stats ? `${stats.out_of_stock_products}` : "—"}
               </Text>
-            </View>
-            <View style={styles.statCard}>
+            </Pressable>
+            <Pressable
+              style={styles.statCard}
+              onPress={() => router.push("/admin/products?stock=low")}
+              testID="stat-card-low"
+            >
               <View style={styles.statHeader}>
                 <Ionicons name="warning" size={16} color="#FB923C" />
                 <Text style={styles.statLabel}>Stock bas</Text>
@@ -126,7 +146,20 @@ export default function AdminIndex() {
               <Text style={[styles.statValue, styles.statValueSmall]} testID="stat-low-stock">
                 {stats ? `${stats.low_stock_variants}` : "—"}
               </Text>
-            </View>
+            </Pressable>
+            <Pressable
+              style={styles.statCard}
+              onPress={() => router.push("/admin/products?filter=coming_soon")}
+              testID="stat-card-coming-soon"
+            >
+              <View style={styles.statHeader}>
+                <Ionicons name="rocket" size={16} color="#A78BFA" />
+                <Text style={styles.statLabel}>À venir</Text>
+              </View>
+              <Text style={[styles.statValue, styles.statValueSmall]} testID="stat-coming-soon">
+                {stats ? `${stats.coming_soon_products}` : "—"}
+              </Text>
+            </Pressable>
           </View>
         </View>
 

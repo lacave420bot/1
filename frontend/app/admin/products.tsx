@@ -1,8 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
-import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -34,6 +34,7 @@ type Draft = {
   unit: string;
   popular: boolean;
   promo: boolean;
+  coming_soon: boolean;
   variants: { label: string; price: string }[];
   total_stock_grams: string;
   low_stock_threshold_grams: string;
@@ -48,6 +49,7 @@ const EMPTY: Draft = {
   unit: "",
   popular: false,
   promo: false,
+  coming_soon: false,
   variants: [],
   total_stock_grams: "",
   low_stock_threshold_grams: "",
@@ -63,6 +65,7 @@ const DEFAULT_VARIANTS_PRESET: { label: string; price: string }[] = [
 
 export default function AdminProductsScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ filter?: string; stock?: string }>();
   const { isAuthenticated } = useAdmin();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -72,6 +75,28 @@ export default function AdminProductsScreen() {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [pickingImage, setPickingImage] = useState(false);
+  const [productFilter, setProductFilter] = useState<"all" | "out" | "low" | "coming_soon">("all");
+
+  useEffect(() => {
+    if (params.stock === "out") setProductFilter("out");
+    else if (params.stock === "low") setProductFilter("low");
+    else if (params.filter === "coming_soon") setProductFilter("coming_soon");
+  }, [params.stock, params.filter]);
+
+  const LOW_STOCK_THRESHOLD = 5;
+  const filteredProducts = useMemo(() => {
+    if (productFilter === "all") return products;
+    if (productFilter === "coming_soon") return products.filter((p) => p.coming_soon);
+    return products.filter((p) => {
+      if (p.coming_soon) return false;
+      const total = p.total_stock_grams;
+      if (total == null) return false;
+      const threshold = (p.low_stock_threshold_grams ?? LOW_STOCK_THRESHOLD);
+      if (productFilter === "out") return total <= 0;
+      if (productFilter === "low") return total > 0 && total <= threshold;
+      return true;
+    });
+  }, [products, productFilter]);
 
   // ---- Image picker helpers (camera / gallery) ----
   const askGoToSettings = (label: string) => {
@@ -198,6 +223,7 @@ export default function AdminProductsScreen() {
       unit: p.unit || "",
       popular: !!p.popular,
       promo: !!p.promo,
+      coming_soon: !!p.coming_soon,
       variants: (p.variants || []).map((v) => ({
         label: v.label,
         price: String(v.price),
@@ -220,6 +246,7 @@ export default function AdminProductsScreen() {
       unit: p.unit || "",
       popular: !!p.popular,
       promo: !!p.promo,
+      coming_soon: !!p.coming_soon,
       variants: (p.variants || []).map((v) => ({
         label: v.label,
         price: String(v.price),
@@ -261,6 +288,7 @@ export default function AdminProductsScreen() {
         unit: draft.unit.trim() || undefined,
         popular: draft.popular,
         promo: draft.promo,
+        coming_soon: draft.coming_soon,
         variants,
         total_stock_grams: totalG === "" ? null : Math.max(0, parseFloat(totalG.replace(",", ".")) || 0),
         low_stock_threshold_grams: thrG === "" ? null : Math.max(0, parseFloat(thrG.replace(",", ".")) || 0),
@@ -320,7 +348,34 @@ export default function AdminProductsScreen() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}>
-          {products.map((p) => (
+          {productFilter !== "all" && (
+            <View style={styles.activeFilterBar}>
+              <Ionicons
+                name={
+                  productFilter === "out" ? "alert-circle" :
+                  productFilter === "low" ? "warning" :
+                  "rocket"
+                }
+                size={14}
+                color="#FBBF24"
+              />
+              <Text style={styles.activeFilterText}>
+                {productFilter === "out" ? "Produits en rupture" :
+                 productFilter === "low" ? "Stock bas" :
+                 "Produits à venir"} · {filteredProducts.length}
+              </Text>
+              <Pressable onPress={() => setProductFilter("all")} hitSlop={6}>
+                <Ionicons name="close-circle" size={16} color={colors.muted} />
+              </Pressable>
+            </View>
+          )}
+          {filteredProducts.length === 0 ? (
+            <View style={[styles.center, { paddingVertical: 60 }]}>
+              <Text style={{ color: colors.muted, textAlign: "center" }}>
+                {productFilter === "all" ? "Aucun produit." : "Aucun produit ne correspond à ce filtre."}
+              </Text>
+            </View>
+          ) : filteredProducts.map((p) => (
             <View key={p.id} style={styles.row} testID={`admin-product-${p.id}`}>
               <Image source={{ uri: p.image }} style={styles.thumb} contentFit="cover" />
               <View style={{ flex: 1 }}>
@@ -331,6 +386,7 @@ export default function AdminProductsScreen() {
                 <View style={styles.tagsRow}>
                   {p.popular && <View style={[styles.tag, { backgroundColor: "#11233F" }]}><Text style={[styles.tagText, { color: "#7AB1FF" }]}>Populaire</Text></View>}
                   {p.promo && <View style={[styles.tag, { backgroundColor: "#2A1A12" }]}><Text style={[styles.tagText, { color: "#FB923C" }]}>Promo</Text></View>}
+                  {p.coming_soon && <View style={[styles.tag, { backgroundColor: "#1F1A2E" }]}><Text style={[styles.tagText, { color: "#A78BFA" }]}>🚧 À venir</Text></View>}
                 </View>
               </View>
               <Pressable
@@ -565,6 +621,10 @@ export default function AdminProductsScreen() {
                 <Text style={styles.switchLabel}>En promotion</Text>
                 <Switch value={draft.promo} onValueChange={(v) => setDraft({ ...draft, promo: v })} testID="draft-promo" />
               </View>
+              <View style={styles.switchRow}>
+                <Text style={styles.switchLabel}>🚧 À venir (Bientôt disponible)</Text>
+                <Switch value={draft.coming_soon} onValueChange={(v) => setDraft({ ...draft, coming_soon: v })} testID="draft-coming-soon" />
+              </View>
               {err && <Text style={styles.err}>{err}</Text>}
             </ScrollView>
             <View style={styles.modalFooter}>
@@ -604,6 +664,18 @@ const styles = StyleSheet.create({
   rowSub: { color: colors.muted, fontSize: font.sm, marginTop: 2 },
   tagsRow: { flexDirection: "row", gap: spacing.xs, marginTop: spacing.xs },
   tag: { paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.pill },
+  activeFilterBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: "rgba(251,191,36,0.10)",
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: "rgba(251,191,36,0.30)",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  activeFilterText: { flex: 1, color: "#FBBF24", fontWeight: "700", fontSize: font.sm },
   tagText: { fontSize: 10, fontWeight: "700" },
   iconBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surfaceTertiary, alignItems: "center", justifyContent: "center" },
   modalRoot: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
