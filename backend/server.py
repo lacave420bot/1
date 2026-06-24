@@ -742,6 +742,11 @@ async def create_order(payload: OrderIn, request: Request):
     except Exception as e:
         logger.warning("[telegram] outer error: %s", e)
 
+    try:
+        await send_customer_order_confirmation_dm(order)
+    except Exception as e:
+        logger.warning("[telegram] customer confirmation dm outer error: %s", e)
+
     if low_stock_alerts:
         try:
             await send_low_stock_alert(low_stock_alerts)
@@ -1330,6 +1335,71 @@ async def send_customer_eta_dm(order: Order, is_update: bool = False) -> None:
                 )
     except Exception as e:
         logger.warning("[telegram] eta dm error: %s", e)
+
+
+def _estimated_window_label(delivery_mode: str | None) -> str:
+    """Return a human-readable estimated time window for pickup or delivery."""
+    if (delivery_mode or "delivery") == "pickup":
+        return "Retrait estimé sous 20 à 35 min."
+    return "Prise en charge estimée sous 35 à 55 min."
+
+
+async def send_customer_order_confirmation_dm(order: Order) -> None:
+    """Send a Telegram confirmation DM to the customer when their order is first
+    placed.  Requires the customer to be linked to a Telegram account (via
+    Magic Link auth).  Silently skips guest-only orders."""
+    user_id = order.user_id
+    if not user_id:
+        return
+    user = await db.users.find_one(
+        {"id": user_id},
+        {"_id": 0, "telegram_user_id": 1, "name": 1},
+    )
+    if not user:
+        return
+    tg_user_id = user.get("telegram_user_id")
+    if not tg_user_id:
+        return
+    token, _ = await _get_telegram_config()
+    if not token:
+        return
+
+    is_pickup = (order.delivery_mode or "delivery") == "pickup"
+    short_id = order.id[:8].upper()
+    first_name = (user.get("name") or order.customer_name or "").strip().split(" ")[0]
+    greet = f"Bonjour {_esc(first_name)} ! " if first_name else ""
+    eta = _esc(_estimated_window_label(order.delivery_mode))
+    mode_label = "retrait sur place 🏪" if is_pickup else "livraison à domicile 🚚"
+    total_str = f"{order.total:.2f} €".replace(".", ",")
+
+    text = (
+        f"<b>🛒 Commande confirmée !</b>\n\n"
+        f"{greet}Votre commande <b>#{short_id}</b> a bien été reçue et est en cours de préparation.\n\n"
+        f"📦 Mode : {mode_label}\n"
+        f"⏱️ {eta}\n"
+        f"💰 Total : <b>{total_str}</b>\n\n"
+        f"Nous vous préviendrons dès qu'elle sera prête. Merci pour votre confiance ! 🌿"
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client_h:
+            r = await client_h.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={
+                    "chat_id": tg_user_id,
+                    "text": text,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True,
+                },
+            )
+            if r.status_code != 200:
+                logger.warning(
+                    "[telegram] customer confirmation dm non-200 (%s): %s",
+                    r.status_code,
+                    r.text[:200],
+                )
+    except Exception as e:
+        logger.warning("[telegram] customer confirmation dm error: %s", e)
 
 
 async def send_low_stock_alert(alerts: list[dict]) -> None:
