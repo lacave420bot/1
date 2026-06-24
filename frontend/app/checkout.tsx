@@ -61,6 +61,7 @@ function getEstimatedWindow(mode: DeliveryMode): string {
   return "Prise en charge estimée sous 35 à 55 min.";
 }
 
+
 export default function CheckoutScreen() {
   const router = useRouter();
   const {
