@@ -56,6 +56,12 @@ function variantSectionLabel(stockUnit?: string | null): string {
   }
 }
 
+function getEstimatedWindow(mode: DeliveryMode): string {
+  if (mode === "pickup") return "Retrait estimé sous 20 à 35 min.";
+  return "Prise en charge estimée sous 35 à 55 min.";
+}
+
+
 export default function CheckoutScreen() {
   const router = useRouter();
   const {

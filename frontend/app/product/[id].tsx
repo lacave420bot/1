@@ -62,23 +62,46 @@ export default function ProductDetailScreen() {
     );
   }
 
-  // Parse grams from variant label ("1 g" → 1, "10 g" → 10), or use explicit `grams` field
-  const variantGrams = (v: { label?: string; grams?: number | null } | null | undefined): number | null => {
+  // Parse quantity from variant label based on the product's stock_unit
+  // ("1 g" → 1, "100 ml" → 100, "1.5 L" → 1.5, "5 unité" → 5)
+  // or use explicit `grams` field for backwards compatibility
+  const variantQuantity = (v: { label?: string; grams?: number | null } | null | undefined): number | null => {
     if (!v) return null;
+    // If explicit grams field exists, use it (backwards compat)
     if (typeof v.grams === "number" && v.grams > 0) return v.grams;
-    const m = (v.label || "").match(/([\d]+(?:[.,][\d]+)?)\s*g/i);
+    
+    // Extract quantity from label based on stock_unit
+    const unit = product.stock_unit || "g";
+    let pattern: RegExp;
+    
+    switch (unit) {
+      case "ml":
+        pattern = /([\d]+(?:[.,][\d]+)?)\s*ml/i;
+        break;
+      case "L":
+        pattern = /([\d]+(?:[.,][\d]+)?)\s*l/i;
+        break;
+      case "unité":
+        pattern = /([\d]+(?:[.,][\d]+)?)\s*(?:unité|unit)?/i;
+        break;
+      case "g":
+      default:
+        pattern = /([\d]+(?:[.,][\d]+)?)\s*g/i;
+    }
+    
+    const m = (v.label || "").match(pattern);
     if (!m) return null;
     const n = parseFloat(m[1].replace(",", "."));
     return isNaN(n) ? null : n;
   };
 
-  // Determine if a variant is currently available (gram-stock priority, fallback to per-variant stock)
+  // Determine if a variant is currently available (unit-stock priority, fallback to per-variant stock)
   const variantAvailableQty = (v: any): number | null => {
     if (!v) return 0;
     const total = (product as any)?.total_stock_grams;
-    const grams = variantGrams(v);
-    if (typeof total === "number" && grams && grams > 0) {
-      return Math.floor((total + 1e-6) / grams);
+    const qty = variantQuantity(v);
+    if (typeof total === "number" && qty && qty > 0) {
+      return Math.floor((total + 1e-6) / qty);
     }
     if (v.stock == null) return null; // unlimited
     return Math.max(0, Number(v.stock) || 0);
