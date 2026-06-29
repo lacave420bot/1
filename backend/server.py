@@ -1,4 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Query, Depends, status, Request
+from fastapi.responses import PlainTextResponse
 from fastapi.security import OAuth2PasswordBearer
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -3150,6 +3151,76 @@ async def admin_analytics(_admin: dict = Depends(require_admin)):
         "low_stock_variants": low_stock,
         "coming_soon_products": coming_soon,
     }
+
+
+# ---------------------- Site Access PIN ----------------------
+
+class SiteAccessPinPayload(BaseModel):
+    pin: str = Field(..., min_length=4, max_length=20)
+
+
+class SiteAccessVerify(BaseModel):
+    pin: str
+
+
+@api_router.get("/site-access")
+async def get_site_access_config():
+    """Public: returns whether a site access PIN is enabled (not the PIN itself)."""
+    doc = await db.app_config.find_one({"_id": "site_access"}) or {}
+    return {"enabled": bool(doc.get("pin"))}
+
+
+@api_router.post("/site-access/verify")
+async def verify_site_access(body: SiteAccessVerify):
+    """Public: verify visitor PIN to access the site."""
+    doc = await db.app_config.find_one({"_id": "site_access"}) or {}
+    stored_pin = doc.get("pin", "")
+    if not stored_pin:
+        return {"valid": True}
+    if body.pin == stored_pin:
+        return {"valid": True}
+    raise HTTPException(status_code=403, detail="Code d'accès incorrect")
+
+
+@api_router.get("/admin/site-access")
+async def admin_get_site_access(_admin: dict = Depends(require_admin)):
+    """Admin: get current site access PIN."""
+    doc = await db.app_config.find_one({"_id": "site_access"}) or {}
+    return {"pin": doc.get("pin", ""), "enabled": bool(doc.get("pin"))}
+
+
+@api_router.put("/admin/site-access")
+async def admin_set_site_access(body: SiteAccessPinPayload, _admin: dict = Depends(require_admin)):
+    """Admin: set site access PIN."""
+    await db.app_config.update_one(
+        {"_id": "site_access"},
+        {"$set": {"pin": body.pin}},
+        upsert=True,
+    )
+    return {"ok": True, "pin": body.pin}
+
+
+@api_router.delete("/admin/site-access")
+async def admin_disable_site_access(_admin: dict = Depends(require_admin)):
+    """Admin: disable site access PIN."""
+    await db.app_config.update_one(
+        {"_id": "site_access"},
+        {"$set": {"pin": ""}},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+# ---------------------- Robots.txt ----------------------
+
+ROBOTS_TXT = """User-agent: *
+Disallow: /
+"""
+
+
+@app.get("/robots.txt", response_class=PlainTextResponse)
+async def robots_txt():
+    return ROBOTS_TXT
 
 
 app.include_router(api_router)
