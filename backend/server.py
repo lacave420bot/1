@@ -3177,7 +3177,7 @@ async def verify_site_access(body: SiteAccessVerify):
     stored_pin = doc.get("pin", "")
     if not stored_pin:
         return {"valid": True}
-    if body.pin == stored_pin:
+    if secrets.compare_digest(body.pin, stored_pin):
         return {"valid": True}
     raise HTTPException(status_code=403, detail="Code d'accès incorrect")
 
