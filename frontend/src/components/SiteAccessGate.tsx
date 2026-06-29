@@ -74,8 +74,13 @@ export function SiteAccessGate({ children }: PropsWithChildren) {
         storePin(pin.trim());
         setUnlocked(true);
       }
-    } catch {
-      setError("Code d'accès incorrect");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "";
+      if (msg.includes("incorrect") || msg.includes("403")) {
+        setError("Code d'accès incorrect");
+      } else {
+        setError("Erreur de connexion. Réessayez.");
+      }
     } finally {
       setSubmitting(false);
     }
