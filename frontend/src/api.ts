@@ -373,6 +373,22 @@ export const api = {
 
   // ---- Admin analytics ----
   adminAnalytics: () => request<AdminAnalytics>(`/admin/analytics`),
+
+  // ---- Site Access PIN ----
+  getSiteAccessConfig: () => request<{ enabled: boolean }>(`/site-access`),
+  verifySiteAccess: (pin: string) =>
+    request<{ valid: boolean }>(`/site-access/verify`, {
+      method: "POST",
+      body: JSON.stringify({ pin }),
+    }),
+  adminGetSiteAccess: () => request<{ pin: string; enabled: boolean }>(`/admin/site-access`),
+  adminSetSiteAccess: (pin: string) =>
+    request<{ ok: boolean; pin: string }>(`/admin/site-access`, {
+      method: "PUT",
+      body: JSON.stringify({ pin }),
+    }),
+  adminDisableSiteAccess: () =>
+    request<{ ok: boolean }>(`/admin/site-access`, { method: "DELETE" }),
 };
 
 export type DayHours = {
