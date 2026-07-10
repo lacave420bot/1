@@ -8,7 +8,8 @@ on:
   push:
     branches: [main]
     paths:
-      - LaCave420.html
+      - index.html
+      - robots.txt
       - .github/workflows/deploy-pages.yml
   workflow_dispatch:
 
@@ -35,7 +36,7 @@ jobs:
       - name: Assemble site
         run: |
           mkdir -p public
-          cp LaCave420.html public/index.html
+          cp index.html public/index.html
           # Block crawlers as an extra privacy layer (the page also sends noindex).
           printf 'User-agent: *\nDisallow: /\n' > public/robots.txt
           # Serve files as-is (no Jekyll processing).
