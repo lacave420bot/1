@@ -2485,7 +2485,7 @@ const CONFIG = { BASE_URL: '' };
 const SOURCE_HTML = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
 // Numéro de version du CODE (pas des données). Permet de vérifier quelle version
 // tourne réellement (utile quand un navigateur sert une version en cache).
-const BUILD = '2026-07-11.6';
+const BUILD = '2026-07-11.7';
 const LOCAL_MODE = !CONFIG.BASE_URL;
 const PLACEHOLDER_IMG = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 3"><rect fill="#1F1F25" width="4" height="3"/><text x="2" y="1.7" font-size="0.9" text-anchor="middle" fill="#3F3F46">📦</text></svg>');
 const STOCK_UNITS = ['g', 'mL', 'pièces'];
@@ -2656,7 +2656,7 @@ function loadCartWithTTL() {
 const state = {
   page: 'home', categories: [], products: [], cart: loadCartWithTTL(),
   orders: [], selectedCategory: 'all', selectedProduct: null, selectedVariantIdx: null,
-  modalQty: 1, deliveryMode: 'pickup', selectedSlot: null, mailboxPhoto: null,
+  modalQty: 1, deliveryMode: 'pickup', selectedSlot: null, showNextSlotDay: false, mailboxPhoto: null,
   loyaltyBalance: loadJSON('cave420_loyalty', 0), useLoyalty: false, loyaltyPicks: [],
   viewMode: loadJSON('cave420_viewmode', 'grid'),
   adminCompact: loadJSON('cave420_admincompact', false),
@@ -3560,13 +3560,19 @@ function renderCheckout() {
   const vAddr = dr.address != null ? dr.address : (prof.address || '');
   const vNotes = dr.notes != null ? dr.notes : '';
   // On affiche les créneaux pour tous les modes
-  const slots = availableSlots(d !== 'pickup', 1); // pickup = tous les jours, livraison/boîte = filtre no_delivery ; 1 seul jour affiché pour limiter le défilement
-  let slotHTML = '';
-  slotHTML = `<div class="form-group"><label>Créneau souhaité (min +${s.min_hours_advance || 2}h)</label></div>${slots.length === 0 ? '<div class="hint">Aucun créneau disponible (boutique fermée).</div>' : slots.map(day => `<div class="slot-day"><div class="slot-day-title">${day.dayLabel}</div><div class="slots">${day.slots.map(sl => `<button class="slot-btn ${state.selectedSlot === sl.iso ? 'selected' : ''}" data-action="pick-slot" data-iso="${sl.iso}">${sl.label}</button>`).join('')}</div></div>`).join('')}`;
+  // Grille du 1er jour disponible ; une case révèle le prochain jour OUVERT
+  // (le 2e jour renvoyé par availableSlots, qui saute déjà fermés / no_delivery).
+  const slotDays = availableSlots(d !== 'pickup', 2);
+  const nextDay = slotDays[1]; // prochain jour ouvert (undefined s'il n'y en a pas)
+  const showNext = !!(state.showNextSlotDay && nextDay);
+  const dayBlock = (day) => `<div class="slot-day"><div class="slot-day-title">${day.dayLabel}</div><div class="slots">${day.slots.map(sl => `<button class="slot-btn ${state.selectedSlot === sl.iso ? 'selected' : ''}" data-action="pick-slot" data-iso="${sl.iso}">${sl.label}</button>`).join('')}</div></div>`;
+  const shownDays = showNext ? slotDays.slice(0, 2) : slotDays.slice(0, 1);
+  const nextToggle = nextDay ? `<label class="check-row" style="margin-top:12px"><input type="checkbox" ${showNext ? 'checked' : ''} data-action="toggle-next-day"> ☞ ${nextDay.dayLabel}</label>` : '';
+  let slotHTML = `<div class="form-group"><label>Créneau souhaité (min +${s.min_hours_advance || 2}h)</label></div>${slotDays.length === 0 ? '<div class="hint">Aucun créneau disponible (boutique fermée).</div>' : shownDays.map(dayBlock).join('') + nextToggle}`;
   const noDeliveryToday = todayHours() && todayHours().no_delivery;
   return `<h2 style="margin-bottom:16px;font-size:18px">Passer commande</h2><div class="delivery-toggle"><button class="delivery-opt ${d === 'delivery' ? 'active' : ''}" data-action="delivery" data-mode="delivery">🚗 Livraison</button><button class="delivery-opt ${d === 'pickup' ? 'active' : ''}" data-action="delivery" data-mode="pickup">🏪 Sur place</button><button class="delivery-opt ${d === 'mailbox' ? 'active' : ''}" data-action="delivery" data-mode="mailbox">📬 Boîte</button></div>${slotHTML}<div class="form-group"><label>Nom (optionnel)</label><input type="text" id="co-name" value="${esc(vName)}" placeholder="Votre nom" autocomplete="name"></div><div class="form-group"><label>Téléphone (optionnel)</label><input type="tel" id="co-phone" inputmode="numeric" value="${esc(vPhone)}" placeholder="06 12 34 56 78" autocomplete="tel"></div><div class="form-group"><label>Pseudo ou Numéro *</label><input type="text" id="co-tg" value="${esc(vTg)}" placeholder="pseudo (1 mot, sans majuscule) ou 06XXXXXXXX"></div><div class="form-group" id="addr-group" style="display:${d === 'pickup' ? 'none' : 'block'}"><label>${d === 'mailbox' ? 'Adresse (boîte aux lettres)' : 'Adresse de livraison'}</label><input type="text" id="co-address" value="${esc(vAddr)}" placeholder="Votre adresse" autocomplete="street-address"></div>${d === 'mailbox' ? `<div class="form-group"><label>Preuve de dépôt du paiement dans la boîte 📸 (obligatoire)</label><button class="btn btn-secondary" data-action="mailbox-photo">📷 ${state.mailboxPhoto ? 'Changer la photo' : 'Joindre une photo'}</button>${state.mailboxPhoto ? '<div style="margin-top:10px"><img src="' + state.mailboxPhoto + '" style="width:100%;max-height:180px;object-fit:cover;border-radius:var(--radius)"></div>' : ''}</div>` : ''}<div class="form-group"><label>Notes (optionnel)</label><textarea id="co-notes" placeholder="Instructions...">${esc(vNotes)}</textarea></div><div class="summary"><div class="summary-row"><span>Minimum (${d === 'pickup' ? 'sur place' : d === 'mailbox' ? 'boîte' : 'livraison'})</span><span>${fmt(min)}</span></div><div class="summary-row total"><span>Total</span><span>${fmt(total)}</span></div></div>${total < min ? `<div style="color:var(--error);text-align:center;margin-bottom:10px;font-size:13px">Minimum ${fmt(min)} requis pour ce mode.</div>` : (!amountOk ? `<div style="color:var(--error);text-align:center;margin-bottom:10px;font-size:13px">Le montant doit être un multiple de 10 € (sauf si vous utilisez votre cagnotte).</div>` : '')}<button class="btn btn-primary" data-action="submit-order" id="submit-btn" ${meetsMin ? '' : 'disabled'}>Confirmer la commande</button><div id="co-error" style="color:var(--error);text-align:center;margin-top:12px;font-size:13px"></div>`;
 }
-function selectDelivery(mode) { state.deliveryMode = mode; state.selectedSlot = null; render(); }
+function selectDelivery(mode) { state.deliveryMode = mode; state.selectedSlot = null; state.showNextSlotDay = false; render(); }
 
 let submitting = false;
 async function submitOrder() {
@@ -4328,6 +4334,7 @@ document.addEventListener('click', e => {
     case 'confirm-diluent': confirmDiluent(); break;
     case 'qty': changeQty(Number(d.idx), Number(d.delta)); break;
     case 'toggle-loyalty': toggleLoyalty(); break;
+    case 'toggle-next-day': state.showNextSlotDay = !state.showNextSlotDay; render(); break;
     case 'close-loyalty': if (e.target === el) { state.loyaltyPickerOpen = false; render(); } break;
     case 'loyalty-pick': loyaltyPickChange(d.id, Number(d.d)); break;
     case 'confirm-loyalty': confirmLoyalty(); break;
