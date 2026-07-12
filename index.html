@@ -385,7 +385,15 @@ body.cap-solved #cap-gate{opacity:0;pointer-events:none}
       var a = JSON.parse(localStorage.getItem('cave420_gate_auth')||'null');
       if (a && a.pseudo && a.ts && (Date.now()-a.ts) < 3600000) {
         var list = readAllowedPseudos();
-        if (!list.length || list.indexOf(String(a.pseudo).toLowerCase()) !== -1) { doUnlock(a.pseudo, false); return; }
+        var pseudoStr = String(a.pseudo);
+        if (list.length && list.indexOf(pseudoStr) === -1) {
+          console.warn('Pseudo non autorisé détecté:', pseudoStr, '- pseudos autorisés:', list);
+          alert('⚠️ Pseudo non autorisé: ' + pseudoStr + '\n\nVeuillez vous reconnecter avec un pseudo valide.');
+          localStorage.removeItem('cave420_gate_auth');
+          location.reload();
+          return;
+        }
+        if (!list.length || list.indexOf(pseudoStr) !== -1) { doUnlock(pseudoStr, false); return; }
       }
     } catch(e){}
     var inp = document.getElementById('cap-pseudo'); if(inp) inp.focus();
