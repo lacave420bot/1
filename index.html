@@ -439,7 +439,7 @@ body.cap-solved #cap-gate{opacity:0;pointer-events:none}
     if(errEl) errEl.textContent = '';
     if(!pseudo){ if(errEl) errEl.textContent = 'Entrez votre pseudo'; if(inp) inp.focus(); return; }
     var list = readAllowedPseudos();
-    if(list.length && list.indexOf(pseudo.toLowerCase()) === -1){ if(errEl) errEl.textContent = 'Pseudo non reconnu'; if(inp){ inp.focus(); if(inp.select) inp.select(); } return; }
+    if(list.length && list.indexOf(pseudo) === -1){ if(errEl) errEl.textContent = 'Pseudo non reconnu'; if(inp){ inp.focus(); if(inp.select) inp.select(); } return; }
     doUnlock(pseudo, true);
   }
   function replay(){document.body.classList.remove('cap-solved');document.body.classList.add('cap-lock');done.classList.remove('show');challenge.classList.remove('cap-hide');setCh(current&&current.id);}
