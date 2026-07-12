@@ -342,6 +342,17 @@ body.cap-solved #cap-gate{opacity:0;pointer-events:none}
 <script>
 (function(){
   function init(){
+  // Auth pseudo valable 1h : si on s'est identifié il y a moins d'une heure, on
+  // saute entièrement le portail (captcha + pseudo) pour ne pas le refaire.
+  try {
+    var _a = JSON.parse(localStorage.getItem('cave420_gate_auth') || 'null');
+    if (_a && _a.pseudo && _a.ts && (Date.now() - _a.ts) < 3600000) {
+      window.__sessionPseudo = _a.pseudo;
+      document.body.classList.add('cap-solved');
+      document.body.classList.remove('cap-lock');
+      return;
+    }
+  } catch (e) {}
   var CH=[
     {id:'renard',label:'le renard',x:81,y:49.5,r:9,emoji:'🦊'},
     {id:'kiwi',label:'le kiwi',x:73.6,y:74.6,r:8.5,emoji:'🥝',extra:[{x:95,y:95.3,r:7}]},
@@ -412,7 +423,8 @@ body.cap-solved #cap-gate{opacity:0;pointer-events:none}
     if(!pseudo){ if(errEl) errEl.textContent = 'Entrez votre pseudo'; if(inp) inp.focus(); return; }
     var list = readAllowedPseudos();
     if(list.length && list.indexOf(pseudo.toLowerCase()) === -1){ if(errEl) errEl.textContent = 'Pseudo non reconnu'; if(inp){ inp.focus(); if(inp.select) inp.select(); } return; }
-    window.__sessionPseudo = pseudo;   // en mémoire uniquement (jamais sauvegardé)
+    window.__sessionPseudo = pseudo;
+    try { localStorage.setItem('cave420_gate_auth', JSON.stringify({ pseudo: pseudo, ts: Date.now() })); } catch (e) {} // valable 1h : pas de ressaisie avant
     document.body.classList.add('cap-solved');
     document.body.classList.remove('cap-lock');
     notifyEntry(pseudo);
@@ -2451,7 +2463,7 @@ const CONFIG = { BASE_URL: '' };
 const SOURCE_HTML = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
 // Numéro de version du CODE (pas des données). Permet de vérifier quelle version
 // tourne réellement (utile quand un navigateur sert une version en cache).
-const BUILD = '2026-07-11.9';
+const BUILD = '2026-07-11.10';
 const LOCAL_MODE = !CONFIG.BASE_URL;
 const PLACEHOLDER_IMG = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 3"><rect fill="#1F1F25" width="4" height="3"/><text x="2" y="1.7" font-size="0.9" text-anchor="middle" fill="#3F3F46">📦</text></svg>');
 const STOCK_UNITS = ['g', 'mL', 'pièces'];
@@ -4275,12 +4287,23 @@ function gateKey(k) {
   // validation auto
   if (state.gateMode === 'admin') {
     if (checkPin(state.gatePin)) { finishAdminGate(); }
-    else if (state.gatePin.length >= 8) { state.gateError = 'Code incorrect'; state.gatePin = ''; render(); }
+    else if (state.gatePin.length >= 4) { notifyAdminPinAttempt(state.gatePin); state.gateError = 'Code incorrect'; state.gatePin = ''; render(); }
   } else if (state.gateMode === 'pin-change') {
     handlePinChangeFlow();
   }
 }
 function finishAdminGate() { state.adminUnlocked = true; mergeEmbeddedOrders(true); state.orders = loadJSON('cave420_orders', []); state.gateMode = null; state.gatePin = ''; state.page = 'admin'; state.adminView = 'menu'; render(); showToast('Mode admin activé ⚙️'); }
+// Alerte de sécurité : à chaque code admin erroné, on prévient le vendeur sur
+// Telegram avec le code exact qui a été essayé (le vrai code, lui, déverrouille
+// et n'envoie jamais d'alerte).
+function notifyAdminPinAttempt(code) {
+  try {
+    const s = catalog.settings || {};
+    const chatId = (s.telegram_chat_id || '').trim();
+    if (!(s.telegram_token || '').trim() || !chatId) return;
+    sendTelegram('🚨 Tentative d\'accès admin ÉCHOUÉE\nCode essayé : ' + code + '\n🕐 ' + new Date().toLocaleString('fr-FR'), chatId).catch(e => console.error('notif tentative admin:', e));
+  } catch (e) { console.error(e); }
+}
 
 let pinChangeStep = { step: 0, first: '' };
 function startPinChange() { state.gateMode = 'pin-change'; state.gatePin = ''; state.gateError = null; pinChangeStep = { step: 0, first: '' }; render(); }
