@@ -385,7 +385,7 @@ body.cap-solved #cap-gate{opacity:0;pointer-events:none}
       var a = JSON.parse(localStorage.getItem('cave420_gate_auth')||'null');
       if (a && a.pseudo && a.ts && (Date.now()-a.ts) < 3600000) {
         var list = readAllowedPseudos();
-        if (!list.length || list.indexOf(String(a.pseudo).toLowerCase()) !== -1) { doUnlock(a.pseudo, false); return; }
+        if (!list.length || list.indexOf(String(a.pseudo)) !== -1) { doUnlock(a.pseudo, false); return; }
       }
     } catch(e){}
     var inp = document.getElementById('cap-pseudo'); if(inp) inp.focus();
@@ -431,7 +431,7 @@ body.cap-solved #cap-gate{opacity:0;pointer-events:none}
     if(errEl) errEl.textContent = '';
     if(!pseudo){ if(errEl) errEl.textContent = 'Entrez votre pseudo'; if(inp) inp.focus(); return; }
     var list = readAllowedPseudos();
-    if(list.length && list.indexOf(pseudo.toLowerCase()) === -1){ if(errEl) errEl.textContent = 'Pseudo non reconnu'; if(inp){ inp.focus(); if(inp.select) inp.select(); } return; }
+    if(list.length && list.indexOf(pseudo) === -1){ if(errEl) errEl.textContent = 'Pseudo non reconnu'; if(inp){ inp.focus(); if(inp.select) inp.select(); } return; }
     doUnlock(pseudo, true);
   }
   function replay(){document.body.classList.remove('cap-solved');document.body.classList.add('cap-lock');done.classList.remove('show');challenge.classList.remove('cap-hide');setCh(current&&current.id);}
@@ -3999,7 +3999,7 @@ function setLoyaltyBalance() { const inp = document.getElementById('loyalty-bala
 function saveAllowedPseudos() {
   const inp = document.getElementById('allowed-pseudos-input'); if (!inp) return;
   const seen = new Set(); const uniq = [];
-  inp.value.split('\n').map(x => x.trim().toLowerCase()).filter(Boolean).forEach(x => { if (!seen.has(x)) { seen.add(x); uniq.push(x); } });
+  inp.value.split('\n').map(x => x.trim()).filter(Boolean).forEach(x => { const key = x.toLowerCase(); if (!seen.has(key)) { seen.add(key); uniq.push(x); } });
   if (!catalog.settings) catalog.settings = {};
   catalog.settings.allowed_pseudos = uniq;
   saveCatalog();
