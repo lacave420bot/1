@@ -3999,7 +3999,7 @@ function setLoyaltyBalance() { const inp = document.getElementById('loyalty-bala
 function saveAllowedPseudos() {
   const inp = document.getElementById('allowed-pseudos-input'); if (!inp) return;
   const seen = new Set(); const uniq = [];
-  inp.value.split('\n').map(x => x.trim().toLowerCase()).filter(Boolean).forEach(x => { if (!seen.has(x)) { seen.add(x); uniq.push(x); } });
+  inp.value.split('\n').map(x => x.trim()).filter(Boolean).forEach(x => { const key = x.toLowerCase(); if (!seen.has(key)) { seen.add(key); uniq.push(x); } });
   if (!catalog.settings) catalog.settings = {};
   catalog.settings.allowed_pseudos = uniq;
   saveCatalog();
