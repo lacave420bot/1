@@ -519,7 +519,7 @@ body.cap-solved #cap-gate{opacity:0;pointer-events:none}
       "千𝓇𝑜𝔃𝑒𝓃❄️",
       "🫵🏼😁🫵🏼",
       "jμ💯",
-      "nico💪"
+      "Nico💪"
     ]
   },
   "categories": [
@@ -2521,6 +2521,9 @@ else if ((EMBEDDED.version || 0) > (catalog.version || 0)) {
 if (!catalog.settings) catalog.settings = JSON.parse(JSON.stringify(EMBEDDED.settings || {}));
 if (!catalog.settings.hours) catalog.settings.hours = JSON.parse(JSON.stringify((EMBEDDED.settings || {}).hours || {}));
 if (!Array.isArray(catalog.settings.allowed_pseudos)) catalog.settings.allowed_pseudos = [];
+if (catalog.settings.allowed_pseudos.length === 0 && Array.isArray(EMBEDDED.settings.allowed_pseudos) && EMBEDDED.settings.allowed_pseudos.length > 0) {
+  catalog.settings.allowed_pseudos = JSON.parse(JSON.stringify(EMBEDDED.settings.allowed_pseudos));
+}
 if (!Array.isArray(catalog.promo_codes)) catalog.promo_codes = [];
 if (!Array.isArray(catalog.loyalty_products)) catalog.loyalty_products = [];
 /* Filet de sécurité : si le token/chat ont été perdus du stockage local, on restaure ceux intégrés au fichier */
