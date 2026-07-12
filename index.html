@@ -385,7 +385,15 @@ body.cap-solved #cap-gate{opacity:0;pointer-events:none}
       var a = JSON.parse(localStorage.getItem('cave420_gate_auth')||'null');
       if (a && a.pseudo && a.ts && (Date.now()-a.ts) < 3600000) {
         var list = readAllowedPseudos();
-        if (!list.length || list.indexOf(String(a.pseudo).toLowerCase()) !== -1) { doUnlock(a.pseudo, false); return; }
+        var pseudoStr = String(a.pseudo);
+        if (list.length && list.indexOf(pseudoStr) === -1) {
+          console.warn('Pseudo non autorisé détecté:', pseudoStr, '- pseudos autorisés:', list);
+          alert('⚠️ Pseudo non autorisé: ' + pseudoStr + '\n\nVeuillez vous reconnecter avec un pseudo valide.');
+          localStorage.removeItem('cave420_gate_auth');
+          location.reload();
+          return;
+        }
+        if (!list.length || list.indexOf(pseudoStr) !== -1) { doUnlock(pseudoStr, false); return; }
       }
     } catch(e){}
     var inp = document.getElementById('cap-pseudo'); if(inp) inp.focus();
@@ -395,7 +403,7 @@ body.cap-solved #cap-gate{opacity:0;pointer-events:none}
       var arr = null;
       try { arr = (catalog && catalog.settings && catalog.settings.allowed_pseudos) || null; } catch(e0){ arr = null; }
       if(!arr){ var raw0 = document.getElementById('catalog-data'); arr = raw0 ? (((JSON.parse(raw0.textContent) || {}).settings) || {}).allowed_pseudos : null; }
-      return Array.isArray(arr) ? arr.map(function(x){ return String(x).trim().toLowerCase(); }).filter(Boolean) : [];
+      return Array.isArray(arr) ? arr.map(function(x){ return String(x).trim(); }).filter(Boolean) : [];
     } catch(e){ return []; }
   }
   function notifyEntry(pseudo){
@@ -431,7 +439,7 @@ body.cap-solved #cap-gate{opacity:0;pointer-events:none}
     if(errEl) errEl.textContent = '';
     if(!pseudo){ if(errEl) errEl.textContent = 'Entrez votre pseudo'; if(inp) inp.focus(); return; }
     var list = readAllowedPseudos();
-    if(list.length && list.indexOf(pseudo.toLowerCase()) === -1){ if(errEl) errEl.textContent = 'Pseudo non reconnu'; if(inp){ inp.focus(); if(inp.select) inp.select(); } return; }
+    if(list.length && list.indexOf(pseudo) === -1){ if(errEl) errEl.textContent = 'Pseudo non reconnu'; if(inp){ inp.focus(); if(inp.select) inp.select(); } return; }
     doUnlock(pseudo, true);
   }
   function replay(){document.body.classList.remove('cap-solved');document.body.classList.add('cap-lock');done.classList.remove('show');challenge.classList.remove('cap-hide');setCh(current&&current.id);}
