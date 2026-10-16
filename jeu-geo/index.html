@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Où est cette ville ?</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root {
+    --bg: #f6f4ef;
+    --panel: #ffffff;
+    --text: #1d1d1f;
+    --muted: #6b6b70;
+    --accent: #2b59c3;
+    --accent-text: #ffffff;
+    --border: #e2dfd7;
+    --good: #1f8a4c;
+    --mid: #c98a0b;
+    --bad: #c23b3b;
+    --shadow: 0 8px 30px rgba(0,0,0,.12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141416;
+      --panel: #1e1e22;
+      --text: #f1f1f3;
+      --muted: #a0a0a8;
+      --accent: #6d93f0;
+      --accent-text: #0e1220;
+      --border: #33333a;
+      --good: #4cc27f;
+      --mid: #e3ac3a;
+      --bad: #ef6b6b;
+      --shadow: 0 8px 30px rgba(0,0,0,.5);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #map { position: fixed; inset: 0; background: var(--bg); }
+
+  .top {
+    position: fixed; top: 12px; left: 12px; right: 12px; z-index: 1000;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;
+    pointer-events: none;
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    box-shadow: var(--shadow); pointer-events: auto;
+  }
+  .hint { padding: 10px 14px; font-size: 14px; max-width: 320px; }
+  .hint b { display: block; font-size: 16px; margin-bottom: 2px; }
+  .stats { padding: 10px 14px; font-size: 13px; text-align: right; min-width: 120px; }
+  .stats .big { font-size: 20px; font-weight: 700; }
+  .stats .muted { color: var(--muted); }
+
+  .sheet {
+    position: fixed; left: 50%; bottom: 16px; transform: translate(-50%, 140%);
+    width: min(440px, calc(100% - 32px)); z-index: 1001; padding: 16px;
+    transition: transform .25s ease;
+  }
+  .sheet.open { transform: translate(-50%, 0); }
+  .sheet h2 { margin: 0 0 4px; font-size: 17px; }
+  .sheet p { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
+  .row { display: flex; gap: 8px; position: relative; }
+  input[type=text] {
+    flex: 1; min-width: 0; font-size: 16px; padding: 11px 12px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text); outline: none;
+  }
+  input[type=text]:focus { border-color: var(--accent); }
+  button {
+    font: inherit; font-size: 15px; font-weight: 600; padding: 11px 16px; border-radius: 10px;
+    border: 0; background: var(--accent); color: var(--accent-text); cursor: pointer;
+  }
+  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  button:disabled { opacity: .5; cursor: default; }
+  .suggest {
+    list-style: none; margin: 6px 0 0; padding: 0; max-height: 200px; overflow-y: auto;
+    border: 1px solid var(--border); border-radius: 10px; display: none;
+  }
+  .suggest.show { display: block; }
+  .suggest li { padding: 9px 12px; cursor: pointer; font-size: 15px; display: flex; justify-content: space-between; gap: 8px; }
+  .suggest li span { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .suggest li.active, .suggest li:hover { background: var(--bg); }
+  .msg { min-height: 18px; margin-top: 8px; font-size: 13px; color: var(--bad); }
+
+  .result { text-align: center; }
+  .result .km { font-size: 42px; font-weight: 800; line-height: 1.1; margin: 4px 0; }
+  .result .verdict { font-size: 15px; margin-bottom: 4px; }
+  .result .pts { color: var(--muted); font-size: 14px; margin-bottom: 14px; }
+  .actions { display: flex; gap: 8px; justify-content: center; }
+
+  .leaflet-container { font-family: inherit; }
+  .city-label {
+    background: var(--panel); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 3px 8px; font-weight: 600; box-shadow: var(--shadow);
+  }
+  .city-label::before { display: none; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="top">
+  <div class="card hint" id="hint">
+    <b>Où est cette ville ?</b>
+    Touche la carte n'importe où, puis tape le nom de la ville que tu crois être à cet endroit.
+  </div>
+  <div class="card stats">
+    <div class="big" id="total">0 pt</div>
+    <div class="muted" id="sub">0 manche</div>
+  </div>
+</div>
+
+<div class="card sheet" id="sheet">
+  <div id="askView">
+    <h2>Quelle ville est ici ?</h2>
+    <p>Tape le nom d'une commune française.</p>
+    <form class="row" id="form" autocomplete="off">
+      <input type="text" id="cityInput" placeholder="ex. Clermont-Ferrand" enterkeyhint="go">
+      <button type="submit" id="okBtn">OK</button>
+    </form>
+    <ul class="suggest" id="suggest"></ul>
+    <div class="msg" id="msg"></div>
+    <div class="actions" style="justify-content:flex-start;margin-top:4px">
+      <button class="ghost" type="button" id="cancelBtn">Annuler</button>
+    </div>
+  </div>
+  <div id="resultView" class="result" hidden>
+    <div class="verdict" id="verdict"></div>
+    <div class="km" id="km"></div>
+    <div class="pts" id="pts"></div>
+    <div class="actions">
+      <button type="button" id="againBtn">Nouvelle manche</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(() => {
+  // Carte de France métropolitaine, sans noms de villes (sinon c'est trop facile)
+  const FRANCE = L.latLngBounds([41.2, -5.3], [51.2, 9.7]);
+  const map = L.map('map', {
+    zoomControl: false, attributionControl: true,
+    maxBounds: FRANCE.pad(0.6), maxBoundsViscosity: 0.8, minZoom: 4, maxZoom: 9
+  });
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+  const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark ? 'dark' : 'light'}_nolabels/{z}/{x}/{y}{r}.png`, {
+    subdomains: 'abcd',
+    attribution: '&copy; OpenStreetMap &copy; CARTO'
+  }).addTo(map);
+  map.fitBounds(FRANCE);
+  window.addEventListener('resize', () => { if (state === 'idle') map.fitBounds(FRANCE); });
+
+  const $ = id => document.getElementById(id);
+  const sheet = $('sheet'), input = $('cityInput'), suggest = $('suggest'), msg = $('msg');
+
+  const guessIcon = L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 11],
+    html: '<div style="width:22px;height:22px;border-radius:50%;background:#2b59c3;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>' });
+  const cityIcon = L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 11],
+    html: '<div style="width:22px;height:22px;border-radius:50%;background:#c23b3b;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>' });
+
+  let state = 'idle';          // idle | asking | result
+  let clicked = null;          // L.LatLng du point posé
+  let layers = [];
+  let rounds = [];
+  let results = [];            // suggestions courantes
+  let active = -1;
+
+  // ---------- Carte ----------
+  map.on('click', e => {
+    if (state === 'result') return;
+    clearLayers();
+    clicked = e.latlng;
+    layers.push(L.marker(clicked, { icon: guessIcon }).addTo(map));
+    openAsk();
+  });
+
+  function clearLayers() { layers.forEach(l => map.removeLayer(l)); layers = []; }
+
+  // ---------- Saisie ----------
+  function openAsk() {
+    state = 'asking';
+    $('askView').hidden = false; $('resultView').hidden = true;
+    input.value = ''; msg.textContent = ''; hideSuggest();
+    sheet.classList.add('open');
+    setTimeout(() => input.focus(), 50);
+  }
+
+  function reset() {
+    state = 'idle'; clicked = null; clearLayers();
+    sheet.classList.remove('open'); input.blur();
+    map.flyToBounds(FRANCE, { duration: .6 });
+  }
+  $('cancelBtn').onclick = reset;
+  $('againBtn').onclick = reset;
+
+  // Recherche de communes via l'API officielle geo.api.gouv.fr
+  async function searchCommunes(q) {
+    const url = 'https://geo.api.gouv.fr/communes?nom=' + encodeURIComponent(q) +
+      '&fields=nom,centre,codeDepartement,population&boost=population&limit=8';
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return (await r.json()).filter(c => c.centre);
+  }
+
+  let debounce, reqId = 0;
+  input.addEventListener('input', () => {
+    clearTimeout(debounce);
+    msg.textContent = '';
+    const q = input.value.trim();
+    if (q.length < 2) { hideSuggest(); return; }
+    debounce = setTimeout(async () => {
+      const id = ++reqId;
+      try {
+        const list = await searchCommunes(q);
+        if (id === reqId) showSuggest(list);
+      } catch { /* l'erreur sera affichée à la validation */ }
+    }, 200);
+  });
+
+  input.addEventListener('keydown', e => {
+    if (!suggest.classList.contains('show')) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive(Math.min(active + 1, results.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(Math.max(active - 1, 0)); }
+    else if (e.key === 'Escape') hideSuggest();
+  });
+
+  function showSuggest(list) {
+    results = list; active = -1;
+    suggest.innerHTML = '';
+    list.forEach((c, i) => {
+      const li = document.createElement('li');
+      li.innerHTML = `<div></div><span></span>`;
+      li.firstChild.textContent = c.nom;
+      li.lastChild.textContent = `(${c.codeDepartement})`;
+      li.addEventListener('mousedown', ev => { ev.preventDefault(); answer(c); });
+      suggest.appendChild(li);
+      if (i === active) li.classList.add('active');
+    });
+    suggest.classList.toggle('show', list.length > 0);
+  }
+  function setActive(i) {
+    active = i;
+    [...suggest.children].forEach((li, j) => li.classList.toggle('active', j === i));
+    suggest.children[i]?.scrollIntoView({ block: 'nearest' });
+  }
+  function hideSuggest() { suggest.classList.remove('show'); results = []; active = -1; }
+
+  $('form').addEventListener('submit', async e => {
+    e.preventDefault();
+    if (active >= 0 && results[active]) return answer(results[active]);
+    const q = input.value.trim();
+    if (!q) return;
+    $('okBtn').disabled = true;
+    try {
+      const list = await searchCommunes(q);
+      if (!list.length) { msg.textContent = `Aucune commune trouvée pour « ${q} ».`; return; }
+      // On privilégie le nom exact, sinon la commune la plus peuplée
+      const norm = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[-'’\s]+/g, ' ').trim();
+      answer(list.find(c => norm(c.nom) === norm(q)) || list[0]);
+    } catch {
+      msg.textContent = 'Impossible de contacter le service de recherche. Vérifie ta connexion.';
+    } finally {
+      $('okBtn').disabled = false;
+    }
+  });
+
+  // ---------- Résultat ----------
+  function haversine(a, b) {
+    const R = 6371, rad = Math.PI / 180;
+    const dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+
+  function answer(c) {
+    if (state !== 'asking') return;
+    state = 'result';
+    hideSuggest(); input.blur();
+    const [lng, lat] = c.centre.coordinates;
+    const city = L.latLng(lat, lng);
+    const km = haversine(clicked, city);
+    const points = Math.round(5000 * Math.exp(-km / 100));   // 5000 pts à 0 km, ~1840 à 100 km
+    rounds.push({ nom: c.nom, km, points });
+
+    layers.push(L.marker(city, { icon: cityIcon }).addTo(map)
+      .bindTooltip(`${c.nom} (${c.codeDepartement})`, { permanent: true, direction: 'top', offset: [0, -12], className: 'city-label' }));
+    layers.push(L.polyline([clicked, city], { color: '#c23b3b', weight: 3, dashArray: '6 8' }).addTo(map));
+    map.flyToBounds(L.latLngBounds([clicked, city]).pad(0.5), { maxZoom: 8, duration: .8,
+      paddingBottomRight: [0, 180] });
+
+    const v = $('verdict');
+    let color, text;
+    if (km < 10) { color = 'var(--good)'; text = 'Dans le mille ! 🎯'; }
+    else if (km < 50) { color = 'var(--good)'; text = 'Excellent !'; }
+    else if (km < 150) { color = 'var(--mid)'; text = 'Pas mal du tout'; }
+    else if (km < 350) { color = 'var(--mid)'; text = 'Bof…'; }
+    else { color = 'var(--bad)'; text = 'Loin, très loin…'; }
+    v.textContent = `${c.nom} — ${text}`;
+    const kmEl = $('km');
+    kmEl.textContent = (km < 10 ? km.toFixed(1) : Math.round(km)).toString().replace('.', ',') + ' km';
+    kmEl.style.color = color;
+    $('pts').textContent = `+${points.toLocaleString('fr-FR')} points`;
+    $('askView').hidden = true; $('resultView').hidden = false;
+    updateStats();
+  }
+
+  function updateStats() {
+    const total = rounds.reduce((s, r) => s + r.points, 0);
+    const avg = rounds.reduce((s, r) => s + r.km, 0) / rounds.length;
+    $('total').textContent = total.toLocaleString('fr-FR') + ' pt' + (total > 1 ? 's' : '');
+    $('sub').textContent = `${rounds.length} manche${rounds.length > 1 ? 's' : ''} · moy. ${Math.round(avg)} km`;
+    $('hint').style.display = 'none';
+  }
+})();
+</script>
+</body>
+</html>
