@@ -243,8 +243,8 @@
   const GEO = 'https://geo.api.gouv.fr';                 // communes, départements, régions françaises
   const PHOTON = 'https://photon.komoot.io';             // recherche de lieux dans le monde (OpenStreetMap)
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
-  const OVERPASS = 'https://overpass-api.de/api/interpreter';
-  const COUNTRIES_URL = 'https://restcountries.com/v3.1/all?fields=name,translations,capital,capitalInfo,latlng,region,subregion,cca2,population';
+  const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass.private.coffee/api/interpreter'];
   const ROUNDS = 10;
 
   // ================= Petits outils =================
@@ -287,12 +287,12 @@
   // ================= Zones =================
   const ZONES = {
     monde:   { label: 'Monde entier', type: 'world', bounds: [[-56, -170], [75, 180]] },
-    europe:  { label: 'Europe', type: 'continent', bounds: [[34, -25], [71, 45]], filter: c => c.region === 'Europe' },
-    afrique: { label: 'Afrique', type: 'continent', bounds: [[-35, -20], [38, 52]], filter: c => c.region === 'Africa' },
-    asie:    { label: 'Asie', type: 'continent', bounds: [[-11, 25], [56, 150]], filter: c => c.region === 'Asia' },
-    amnord:  { label: 'Amérique du Nord et centrale', type: 'continent', bounds: [[7, -170], [72, -52]], filter: c => c.region === 'Americas' && c.sub !== 'South America' },
-    amsud:   { label: 'Amérique du Sud', type: 'continent', bounds: [[-56, -82], [13, -34]], filter: c => c.sub === 'South America' },
-    oceanie: { label: 'Océanie', type: 'continent', bounds: [[-48, 110], [0, 180]], filter: c => c.region === 'Oceania' },
+    europe:  { label: 'Europe', type: 'continent', bounds: [[34, -25], [71, 45]], filter: c => c.cont === 'EU' },
+    afrique: { label: 'Afrique', type: 'continent', bounds: [[-35, -20], [38, 52]], filter: c => c.cont === 'AF' },
+    asie:    { label: 'Asie', type: 'continent', bounds: [[-11, 25], [56, 150]], filter: c => c.cont === 'AS' },
+    amnord:  { label: 'Amérique du Nord et centrale', type: 'continent', bounds: [[7, -170], [72, -52]], filter: c => c.cont === 'NA' },
+    amsud:   { label: 'Amérique du Sud', type: 'continent', bounds: [[-56, -82], [13, -34]], filter: c => c.cont === 'SA' },
+    oceanie: { label: 'Océanie', type: 'continent', bounds: [[-48, 110], [0, 180]], filter: c => c.cont === 'OC' },
     fr: { label: 'France', type: 'france', cc: 'FR', bounds: [[41.2, -5.3], [51.2, 9.7]] },
     be: { label: 'Belgique', cc: 'BE', bounds: [[49.45, 2.5], [51.55, 6.45]] },
     ch: { label: 'Suisse', cc: 'CH', bounds: [[45.8, 5.9], [47.85, 10.5]] },
@@ -350,25 +350,243 @@
   };
   const DIFFS = { facile: 'Facile', moyen: 'Moyen', difficile: 'Difficile' };
 
-  // Noms français des capitales quand ils diffèrent de l'anglais
-  const CAP_FR = {
-    'Beijing': 'Pékin', 'Moscow': 'Moscou', 'Warsaw': 'Varsovie', 'London': 'Londres', 'Vienna': 'Vienne',
-    'Lisbon': 'Lisbonne', 'Athens': 'Athènes', 'Copenhagen': 'Copenhague', 'Brussels': 'Bruxelles',
-    'Bucharest': 'Bucarest', 'Kyiv': 'Kiev', 'Algiers': 'Alger', 'Cairo': 'Le Caire', 'Mexico City': 'Mexico',
-    'Washington, D.C.': 'Washington', 'Seoul': 'Séoul', 'Tehran': 'Téhéran', 'Baghdad': 'Bagdad',
-    'Damascus': 'Damas', 'Beirut': 'Beyrouth', 'Jerusalem': 'Jérusalem', 'Riyadh': 'Riyad',
-    'Kuwait City': 'Koweït', 'Havana': 'La Havane', 'Bern': 'Berne', 'Valletta': 'La Valette',
-    'Nicosia': 'Nicosie', 'Yerevan': 'Erevan', 'Baku': 'Bakou', 'Tashkent': 'Tachkent', 'Kabul': 'Kaboul',
-    'Kathmandu': 'Katmandou', 'Singapore': 'Singapour', 'Manila': 'Manille', 'Ulan Bator': 'Oulan-Bator',
-    'Addis Ababa': 'Addis-Abeba', 'Mogadishu': 'Mogadiscio', 'Muscat': 'Mascate', "Sana'a": 'Sanaa',
-    'Tbilisi': 'Tbilissi', 'Chișinău': 'Chisinau', 'Sofia': 'Sofia', 'Tirana': 'Tirana', 'Belgrade': 'Belgrade',
-    'Dushanbe': 'Douchanbé', 'Ashgabat': 'Achgabat', 'Bishkek': 'Bichkek', 'Pyongyang': 'Pyongyang',
-    'Hanoi': 'Hanoï', 'Dhaka': 'Dacca', 'Port Louis': 'Port-Louis', 'Tripoli': 'Tripoli', 'Khartoum': 'Khartoum',
-    'Reykjavik': 'Reykjavik', 'Ljubljana': 'Ljubljana', 'Asunción': 'Asuncion', 'Bogotá': 'Bogota',
-    'City of Victoria': 'Victoria', 'Kingston': 'Kingston', 'Nassau': 'Nassau', 'Panama City': 'Panama',
-    'Guatemala City': 'Guatemala', 'San José': 'San José', 'Brasília': 'Brasilia', 'Yaoundé': 'Yaoundé',
-    "N'Djamena": "N'Djaména", 'Nouakchott': 'Nouakchott', 'Naypyidaw': 'Naypyidaw', 'Canberra': 'Canberra',
+  // ================= Données intégrées (pas besoin de connexion) =================
+  // code|nom|continent|population (millions)|lat|lng du centre|capitale(/autres noms)|lat|lng|autres noms du pays
+  const COUNTRY_DATA = `
+FR|France|EU|68|46.6|2.4|Paris|48.857|2.352|
+DE|Allemagne|EU|84|51.1|10.4|Berlin|52.52|13.405|
+IT|Italie|EU|59|42.8|12.6|Rome|41.903|12.496|
+ES|Espagne|EU|48|40.2|-3.6|Madrid|40.417|-3.704|
+PT|Portugal|EU|10.4|39.6|-8|Lisbonne/Lisboa|38.722|-9.139|
+GB|Royaume-Uni|EU|68|54|-2.5|Londres/London|51.507|-0.128|Angleterre/Grande-Bretagne/UK/England
+IE|Irlande|EU|5.2|53.2|-8|Dublin|53.35|-6.26|
+BE|Belgique|EU|11.8|50.6|4.6|Bruxelles/Brussel|50.85|4.35|
+NL|Pays-Bas|EU|17.9|52.2|5.5|Amsterdam|52.37|4.9|Hollande/Netherlands
+LU|Luxembourg|EU|0.66|49.8|6.1|Luxembourg|49.611|6.13|
+CH|Suisse|EU|8.9|46.8|8.2|Berne/Bern|46.948|7.447|
+AT|Autriche|EU|9.1|47.6|14.1|Vienne/Wien|48.208|16.373|
+PL|Pologne|EU|37|52.1|19.4|Varsovie/Warszawa|52.23|21.012|
+CZ|Tchéquie|EU|10.9|49.8|15.5|Prague/Praha|50.075|14.438|République tchèque
+SK|Slovaquie|EU|5.4|48.7|19.7|Bratislava|48.149|17.107|
+HU|Hongrie|EU|9.6|47.2|19.4|Budapest|47.498|19.04|
+SI|Slovénie|EU|2.1|46.1|14.8|Ljubljana|46.056|14.506|
+HR|Croatie|EU|3.9|45.1|15.2|Zagreb|45.815|15.982|
+BA|Bosnie-Herzégovine|EU|3.2|44.2|17.8|Sarajevo|43.856|18.413|Bosnie
+RS|Serbie|EU|6.6|44|20.8|Belgrade|44.787|20.457|
+ME|Monténégro|EU|0.62|42.8|19.3|Podgorica|42.441|19.263|
+XK|Kosovo|EU|1.8|42.6|20.9|Pristina|42.663|21.165|
+AL|Albanie|EU|2.8|41.1|20|Tirana|41.327|19.819|
+MK|Macédoine du Nord|EU|1.8|41.6|21.7|Skopje|41.998|21.425|Macédoine
+GR|Grèce|EU|10.4|39.3|22|Athènes|37.984|23.728|
+BG|Bulgarie|EU|6.4|42.7|25.3|Sofia|42.698|23.322|
+RO|Roumanie|EU|19|45.9|25|Bucarest|44.426|26.103|
+MD|Moldavie|EU|2.5|47.2|28.5|Chisinau|47.011|28.863|
+UA|Ukraine|EU|37|49|31.3|Kiev/Kyiv/Kyïv|50.45|30.523|
+BY|Biélorussie|EU|9.2|53.7|28|Minsk|53.904|27.562|Bélarus
+LT|Lituanie|EU|2.8|55.3|23.9|Vilnius|54.687|25.28|
+LV|Lettonie|EU|1.9|56.9|24.6|Riga|56.95|24.105|
+EE|Estonie|EU|1.3|58.7|25.5|Tallinn|59.437|24.754|
+FI|Finlande|EU|5.6|64.5|26|Helsinki|60.17|24.94|
+SE|Suède|EU|10.5|62.8|16.7|Stockholm|59.33|18.07|
+NO|Norvège|EU|5.5|61.5|9|Oslo|59.914|10.752|
+DK|Danemark|EU|5.9|56|9.5|Copenhague|55.676|12.568|
+IS|Islande|EU|0.38|64.9|-18.6|Reykjavik|64.147|-21.94|
+RU|Russie|EU|144|61.5|98|Moscou/Moskva|55.756|37.617|
+MT|Malte|EU|0.53|35.9|14.4|La Valette/Valletta|35.899|14.514|
+CY|Chypre|EU|1.25|35|33.2|Nicosie|35.185|33.382|
+AD|Andorre|EU|0.08|42.55|1.58|Andorre-la-Vieille|42.507|1.521|
+MC|Monaco|EU|0.04|43.74|7.42|Monaco|43.733|7.417|
+SM|Saint-Marin|EU|0.034|43.94|12.46|Saint-Marin|43.936|12.447|
+VA|Vatican|EU|0.001|41.903|12.453|Vatican|41.903|12.453|
+LI|Liechtenstein|EU|0.039|47.16|9.55|Vaduz|47.141|9.521|
+TR|Turquie|AS|85|39|35.2|Ankara|39.933|32.86|
+GE|Géorgie|AS|3.7|42.2|43.5|Tbilissi|41.716|44.783|
+AM|Arménie|AS|2.8|40.2|45|Erevan|40.179|44.499|
+AZ|Azerbaïdjan|AS|10.1|40.3|47.7|Bakou|40.409|49.867|
+KZ|Kazakhstan|AS|20|48|67|Astana|51.169|71.449|
+UZ|Ouzbékistan|AS|36|41.4|64.6|Tachkent|41.299|69.24|
+TM|Turkménistan|AS|6.5|39|59.5|Achgabat|37.96|58.326|
+KG|Kirghizistan|AS|7|41.4|74.6|Bichkek|42.875|74.6|
+TJ|Tadjikistan|AS|10|38.9|71|Douchanbé|38.56|68.787|
+AF|Afghanistan|AS|41|33.9|67.7|Kaboul|34.555|69.207|
+PK|Pakistan|AS|240|30|69.5|Islamabad|33.684|73.048|
+IN|Inde|AS|1430|22|79|New Delhi/Delhi|28.614|77.209|
+NP|Népal|AS|30|28.4|84.1|Katmandou|27.717|85.324|
+BT|Bhoutan|AS|0.78|27.5|90.4|Thimphou|27.472|89.639|
+BD|Bangladesh|AS|172|23.7|90.3|Dacca/Dhaka|23.81|90.412|
+LK|Sri Lanka|AS|22|7.9|80.7|Colombo/Sri Jayawardenepura Kotte|6.927|79.861|
+MV|Maldives|AS|0.52|3.2|73.2|Malé|4.175|73.509|
+CN|Chine|AS|1410|35|103|Pékin/Beijing|39.904|116.407|
+MN|Mongolie|AS|3.4|46.9|103.8|Oulan-Bator|47.886|106.906|
+KP|Corée du Nord|AS|26|40.3|127.5|Pyongyang|39.039|125.763|
+KR|Corée du Sud|AS|52|36.5|127.9|Séoul|37.566|126.978|Corée
+JP|Japon|AS|124|36.2|138.3|Tokyo|35.676|139.65|
+TW|Taïwan|AS|23.5|23.7|121|Taipei|25.033|121.565|
+MM|Birmanie|AS|54|21|96|Naypyidaw|19.763|96.078|Myanmar
+TH|Thaïlande|AS|70|15.1|101|Bangkok|13.756|100.502|
+LA|Laos|AS|7.5|18.2|103.9|Vientiane|17.975|102.633|
+KH|Cambodge|AS|17|12.6|104.9|Phnom Penh|11.556|104.928|
+VN|Viêt Nam|AS|99|16.4|107.5|Hanoï|21.028|105.854|Vietnam
+MY|Malaisie|AS|34|4.2|102|Kuala Lumpur|3.139|101.687|
+SG|Singapour|AS|5.9|1.35|103.82|Singapour|1.29|103.85|
+ID|Indonésie|AS|278|-2|113.9|Jakarta|-6.208|106.846|
+PH|Philippines|AS|117|15.5|121|Manille|14.6|120.984|
+BN|Brunei|AS|0.45|4.5|114.7|Bandar Seri Begawan|4.903|114.939|
+TL|Timor oriental|AS|1.36|-8.8|125.7|Dili|-8.556|125.56|Timor-Leste
+SA|Arabie saoudite|AS|36|24|45|Riyad|24.713|46.675|
+YE|Yémen|AS|34|15.6|48|Sanaa|15.369|44.191|
+OM|Oman|AS|4.6|21|57|Mascate|23.588|58.383|
+AE|Émirats arabes unis|AS|9.4|23.9|54.3|Abou Dabi/Abu Dhabi|24.453|54.377|Émirats/EAU/Dubaï
+QA|Qatar|AS|2.7|25.3|51.2|Doha|25.286|51.533|
+BH|Bahreïn|AS|1.5|26.05|50.55|Manama|26.228|50.586|
+KW|Koweït|AS|4.3|29.3|47.6|Koweït|29.376|47.977|
+IQ|Irak|AS|45|33|43.7|Bagdad|33.315|44.366|
+SY|Syrie|AS|22|35|38.5|Damas|33.513|36.292|
+LB|Liban|AS|5.5|33.9|35.9|Beyrouth|33.894|35.502|
+JO|Jordanie|AS|11|31.2|36.5|Amman|31.954|35.911|
+IL|Israël|AS|9.8|31|34.85|Jérusalem|31.769|35.216|
+PS|Palestine|AS|5.4|31.9|35.2|Ramallah|31.902|35.206|
+IR|Iran|AS|89|32.5|54|Téhéran|35.689|51.389|
+MA|Maroc|AF|37|31.8|-7.1|Rabat|34.02|-6.84|
+DZ|Algérie|AF|45|28|2.6|Alger|36.754|3.059|
+TN|Tunisie|AF|12|34|9.5|Tunis|36.806|10.181|
+LY|Libye|AF|7|27|17|Tripoli|32.887|13.191|
+EG|Égypte|AF|112|26.6|30|Le Caire|30.044|31.236|
+SD|Soudan|AF|48|15.5|30|Khartoum|15.501|32.56|
+SS|Soudan du Sud|AF|11|7.5|30|Djouba/Juba|4.859|31.571|
+ET|Éthiopie|AF|126|8.6|39.6|Addis-Abeba|9.03|38.74|
+ER|Érythrée|AF|3.7|15.2|39|Asmara|15.322|38.925|
+DJ|Djibouti|AF|1.1|11.8|42.6|Djibouti|11.588|43.145|
+SO|Somalie|AF|18|5.2|46.2|Mogadiscio|2.047|45.318|
+KE|Kenya|AF|55|0.2|37.9|Nairobi|-1.292|36.822|
+UG|Ouganda|AF|48|1.4|32.3|Kampala|0.348|32.582|
+RW|Rwanda|AF|14|-2|29.9|Kigali|-1.944|30.062|
+BI|Burundi|AF|13|-3.4|29.9|Gitega|-3.427|29.925|
+TZ|Tanzanie|AF|65|-6.4|34.9|Dodoma|-6.163|35.752|
+MZ|Mozambique|AF|33|-18|35.5|Maputo|-25.969|32.573|
+MW|Malawi|AF|20|-13.3|34|Lilongwe|-13.963|33.774|
+ZM|Zambie|AF|20|-13.5|27.8|Lusaka|-15.388|28.322|
+ZW|Zimbabwe|AF|16|-19|29.8|Harare|-17.825|31.033|
+BW|Botswana|AF|2.6|-22.3|24.7|Gaborone|-24.628|25.923|
+NA|Namibie|AF|2.6|-22.6|17.1|Windhoek|-22.56|17.066|
+ZA|Afrique du Sud|AF|60|-29|24.7|Pretoria|-25.747|28.229|
+LS|Lesotho|AF|2.3|-29.6|28.2|Maseru|-29.31|27.48|
+SZ|Eswatini|AF|1.2|-26.5|31.5|Mbabane|-26.305|31.137|Swaziland
+MG|Madagascar|AF|30|-19.4|46.7|Antananarivo/Tananarive|-18.879|47.508|
+MU|Maurice|AF|1.3|-20.25|57.55|Port-Louis|-20.161|57.501|Île Maurice
+KM|Comores|AF|0.85|-11.7|43.3|Moroni|-11.704|43.24|
+SC|Seychelles|AF|0.1|-4.68|55.48|Victoria|-4.62|55.455|
+CV|Cap-Vert|AF|0.6|15.1|-23.6|Praia|14.933|-23.513|
+AO|Angola|AF|36|-12.3|17.5|Luanda|-8.839|13.289|
+CD|République démocratique du Congo|AF|102|-2.9|23.6|Kinshasa|-4.441|15.266|RDC/RD Congo/Congo-Kinshasa
+CG|Congo|AF|6|-0.7|15.2|Brazzaville|-4.263|15.242|Congo-Brazzaville/République du Congo
+GA|Gabon|AF|2.4|-0.8|11.6|Libreville|0.416|9.467|
+GQ|Guinée équatoriale|AF|1.7|1.6|10.5|Malabo|3.75|8.783|
+CM|Cameroun|AF|28|5.7|12.7|Yaoundé|3.848|11.502|
+CF|Centrafrique|AF|5.7|6.6|20.9|Bangui|4.395|18.558|République centrafricaine
+TD|Tchad|AF|18|15.4|18.7|N'Djaména|12.134|15.056|
+NE|Niger|AF|27|17.6|9.4|Niamey|13.512|2.112|
+NG|Nigeria|AF|224|9.1|8.7|Abuja|9.076|7.399|
+BJ|Bénin|AF|13|9.3|2.3|Porto-Novo|6.497|2.605|
+TG|Togo|AF|9|8.6|1|Lomé|6.131|1.223|
+GH|Ghana|AF|34|7.9|-1|Accra|5.603|-0.187|
+CI|Côte d'Ivoire|AF|29|7.6|-5.5|Yamoussoukro|6.827|-5.289|
+BF|Burkina Faso|AF|23|12.3|-1.6|Ouagadougou|12.371|-1.52|
+ML|Mali|AF|23|17.6|-4|Bamako|12.639|-8.003|
+MR|Mauritanie|AF|4.9|20.3|-10.3|Nouakchott|18.079|-15.965|
+SN|Sénégal|AF|18|14.5|-14.5|Dakar|14.716|-17.467|
+GM|Gambie|AF|2.8|13.45|-15.4|Banjul|13.454|-16.579|
+GW|Guinée-Bissau|AF|2.1|12|-15|Bissau|11.864|-15.598|
+GN|Guinée|AF|14|10.4|-10.9|Conakry|9.641|-13.578|
+SL|Sierra Leone|AF|8.8|8.5|-11.8|Freetown|8.484|-13.234|
+LR|Liberia|AF|5.4|6.4|-9.4|Monrovia|6.315|-10.807|
+ST|Sao Tomé-et-Principe|AF|0.23|0.25|6.6|Sao Tomé|0.336|6.727|
+US|États-Unis|NA|335|39.8|-98.6|Washington|38.907|-77.037|USA/Amérique/Etats-Unis d'Amérique
+CA|Canada|NA|40|56|-100|Ottawa|45.421|-75.697|
+MX|Mexique|NA|129|23.6|-102.5|Mexico|19.433|-99.133|
+GT|Guatemala|NA|18|15.6|-90.3|Guatemala|14.634|-90.507|
+BZ|Belize|NA|0.41|17.2|-88.7|Belmopan|17.251|-88.759|
+SV|Salvador|NA|6.3|13.7|-88.9|San Salvador|13.693|-89.218|El Salvador
+HN|Honduras|NA|10|14.8|-86.6|Tegucigalpa|14.072|-87.192|
+NI|Nicaragua|NA|7|12.9|-85.2|Managua|12.115|-86.236|
+CR|Costa Rica|NA|5.2|9.9|-84.2|San José|9.928|-84.091|
+PA|Panama|NA|4.4|8.5|-80.1|Panama|8.983|-79.517|
+CU|Cuba|NA|11|21.8|-79.5|La Havane|23.113|-82.366|
+JM|Jamaïque|NA|2.8|18.15|-77.3|Kingston|17.971|-76.793|
+HT|Haïti|NA|11.7|19|-72.4|Port-au-Prince|18.594|-72.307|
+DO|République dominicaine|NA|11.3|18.8|-70.5|Saint-Domingue|18.486|-69.931|
+BS|Bahamas|NA|0.41|24.6|-77.9|Nassau|25.048|-77.355|
+TT|Trinité-et-Tobago|NA|1.5|10.45|-61.3|Port-d'Espagne|10.657|-61.519|
+BB|Barbade|NA|0.28|13.17|-59.55|Bridgetown|13.098|-59.616|
+DM|Dominique|NA|0.07|15.42|-61.35|Roseau|15.301|-61.388|
+LC|Sainte-Lucie|NA|0.18|13.9|-60.97|Castries|14.01|-60.987|
+GD|Grenade|NA|0.13|12.11|-61.68|Saint-Georges|12.056|-61.749|
+VC|Saint-Vincent-et-les-Grenadines|NA|0.1|13.25|-61.2|Kingstown|13.16|-61.225|
+AG|Antigua-et-Barbuda|NA|0.09|17.08|-61.8|Saint John's|17.12|-61.846|
+KN|Saint-Christophe-et-Niévès|NA|0.05|17.33|-62.75|Basseterre|17.3|-62.717|
+BR|Brésil|SA|216|-10|-52|Brasilia|-15.794|-47.882|
+AR|Argentine|SA|46|-34|-64|Buenos Aires|-34.604|-58.382|
+CL|Chili|SA|19.6|-30|-70.9|Santiago|-33.449|-70.669|
+UY|Uruguay|SA|3.4|-32.8|-56|Montevideo|-34.901|-56.165|
+PY|Paraguay|SA|6.9|-23.4|-58.4|Asuncion|-25.264|-57.576|
+BO|Bolivie|SA|12.4|-16.7|-64.7|Sucre/La Paz|-19.047|-65.26|
+PE|Pérou|SA|34|-9.2|-75|Lima|-12.046|-77.043|
+EC|Équateur|SA|18|-1.5|-78.2|Quito|-0.18|-78.468|
+CO|Colombie|SA|52|4|-73|Bogota|4.711|-74.072|
+VE|Venezuela|SA|28|7|-66|Caracas|10.481|-66.904|
+GY|Guyana|SA|0.8|4.9|-58.9|Georgetown|6.801|-58.155|
+SR|Suriname|SA|0.62|4.1|-55.9|Paramaribo|5.852|-55.204|
+AU|Australie|OC|26.6|-25.3|133.8|Canberra|-35.281|149.13|
+NZ|Nouvelle-Zélande|OC|5.2|-41.8|172.8|Wellington|-41.287|174.776|
+PG|Papouasie-Nouvelle-Guinée|OC|10|-6.3|145|Port Moresby|-9.443|147.18|
+FJ|Fidji|OC|0.93|-17.8|178|Suva|-18.141|178.442|
+SB|Îles Salomon|OC|0.72|-9.6|160.2|Honiara|-9.433|159.95|Salomon
+VU|Vanuatu|OC|0.33|-15.4|166.9|Port-Vila|-17.734|168.322|
+WS|Samoa|OC|0.22|-13.75|-172.1|Apia|-13.833|-171.767|
+TO|Tonga|OC|0.1|-21.18|-175.2|Nukualofa|-21.139|-175.204|
+KI|Kiribati|OC|0.13|1.45|173|Tarawa|1.451|172.971|
+FM|Micronésie|OC|0.11|6.9|158.2|Palikir|6.917|158.185|
+MH|Îles Marshall|OC|0.04|7.1|171.2|Majuro|7.09|171.38|Marshall
+PW|Palaos|OC|0.018|7.5|134.6|Ngerulmud|7.5|134.624|Palau
+NR|Nauru|OC|0.012|-0.53|166.92|Yaren|-0.547|166.92|
+TV|Tuvalu|OC|0.011|-8.52|179.2|Funafuti|-8.521|179.198|`;
+
+  // Principales villes des pays du menu, de la plus peuplée à la moins peuplée (nom,lat,lng;…)
+  const CITY_DATA = {
+    BE: 'Bruxelles,50.85,4.35;Anvers,51.219,4.402;Gand,51.054,3.717;Charleroi,50.411,4.444;Liège,50.633,5.567;Bruges,51.209,3.224;Namur,50.467,4.867;Louvain,50.88,4.7;Mons,50.454,3.952;Malines,51.028,4.48;Alost,50.938,4.04;La Louvière,50.48,4.187;Courtrai,50.828,3.265;Hasselt,50.93,5.338;Ostende,51.216,2.927;Tournai,50.607,3.389;Genk,50.965,5.5;Seraing,50.583,5.5;Roulers,50.947,3.123;Verviers,50.589,5.862;Mouscron,50.744,3.214;Arlon,49.683,5.817;Bastogne,50.0,5.717;Dinant,50.26,4.912;Spa,50.492,5.864',
+    CH: 'Zurich,47.377,8.541;Genève,46.204,6.143;Bâle,47.56,7.588;Lausanne,46.52,6.633;Berne,46.948,7.447;Winterthour,47.5,8.724;Lucerne,47.05,8.31;Saint-Gall,47.424,9.377;Lugano,46.004,8.951;Bienne,47.137,7.247;Thoune,46.758,7.628;Fribourg,46.806,7.162;Neuchâtel,46.99,6.93;La Chaux-de-Fonds,47.1,6.83;Schaffhouse,47.696,8.635;Coire,46.85,9.53;Sion,46.233,7.36;Zoug,47.172,8.517;Yverdon-les-Bains,46.778,6.641;Montreux,46.433,6.917;Bellinzone,46.195,9.024;Locarno,46.17,8.8;Davos,46.8,9.836;Zermatt,46.02,7.749',
+    LU: 'Luxembourg,49.611,6.13;Esch-sur-Alzette,49.496,5.98;Differdange,49.524,5.891;Dudelange,49.48,6.087;Pétange,49.558,5.881;Ettelbruck,49.847,6.104;Diekirch,49.868,6.159;Bettembourg,49.518,6.1;Echternach,49.812,6.418;Wiltz,49.966,5.932;Mersch,49.749,6.106;Grevenmacher,49.68,6.44;Remich,49.545,6.367;Mondorf-les-Bains,49.505,6.281;Steinfort,49.661,5.917;Redange,49.765,5.889;Vianden,49.935,6.209;Clervaux,50.055,6.031',
+    ES: 'Madrid,40.417,-3.704;Barcelone,41.385,2.173;Valence,39.47,-0.376;Séville,37.389,-5.984;Saragosse,41.649,-0.889;Malaga,36.721,-4.421;Murcie,37.992,-1.131;Palma,39.57,2.65;Bilbao,43.263,-2.935;Alicante,38.345,-0.481;Cordoue,37.888,-4.779;Valladolid,41.652,-4.724;Vigo,42.24,-8.72;Gijón,43.532,-5.661;La Corogne,43.362,-8.411;Grenade,37.177,-3.599;Vitoria,42.847,-2.672;Elche,38.267,-0.698;Oviedo,43.361,-5.849;Pampelune,42.812,-1.646;Saint-Sébastien,43.318,-1.981;Santander,43.462,-3.81;Almería,36.834,-2.464;Salamanque,40.97,-5.663;Burgos,42.344,-3.697;Albacete,38.994,-1.858;Logroño,42.465,-2.445;Badajoz,38.879,-6.97;Huelva,37.261,-6.945;Tarragone,41.119,1.245;León,42.599,-5.567;Cadix,36.527,-6.288;Lérida,41.617,0.62;Jaén,37.779,-3.784;Gérone,41.979,2.821;Saint-Jacques-de-Compostelle,42.878,-8.545;Lugo,43.012,-7.556;Cáceres,39.475,-6.372;Tolède,39.863,-4.027;Ségovie,40.948,-4.118;Huesca,42.14,-0.408;Cuenca,40.07,-2.137;Soria,41.764,-2.465;Teruel,40.345,-1.106',
+    PT: 'Lisbonne,38.722,-9.139;Porto,41.15,-8.611;Braga,41.545,-8.427;Coimbra,40.211,-8.429;Setúbal,38.524,-8.893;Sintra,38.8,-9.388;Cascais,38.697,-9.421;Aveiro,40.641,-8.654;Guimarães,41.442,-8.296;Leiria,39.744,-8.807;Viseu,40.657,-7.914;Faro,37.019,-7.93;Évora,38.571,-7.909;Portimão,37.138,-8.538;Santarém,39.236,-8.686;Viana do Castelo,41.693,-8.834;Castelo Branco,39.823,-7.491;Vila Real,41.3,-7.746;Guarda,40.537,-7.267;Bragance,41.806,-6.757;Beja,38.015,-7.863;Portalegre,39.293,-7.431;Chaves,41.74,-7.47;Tomar,39.601,-8.41;Lagos,37.102,-8.674;Nazaré,39.601,-9.071',
+    IT: 'Rome,41.903,12.496;Milan,45.464,9.19;Naples,40.852,14.268;Turin,45.07,7.687;Palerme,38.116,13.361;Gênes,44.405,8.946;Bologne,44.495,11.343;Florence,43.77,11.256;Bari,41.117,16.872;Catane,37.502,15.087;Venise,45.44,12.316;Vérone,45.438,10.992;Messine,38.193,15.554;Padoue,45.406,11.877;Trieste,45.65,13.777;Brescia,45.541,10.211;Parme,44.801,10.328;Tarente,40.464,17.247;Prato,43.877,11.102;Modène,44.647,10.925;Reggio de Calabre,38.111,15.647;Pérouse,43.112,12.389;Livourne,43.548,10.311;Cagliari,39.224,9.122;Rimini,44.068,12.566;Salerne,40.682,14.768;Bergame,45.698,9.677;Foggia,41.462,15.545;Trente,46.07,11.121;Ancône,43.616,13.519;Bolzano,46.498,11.355;Udine,46.063,13.235;Pescara,42.464,14.214;Pise,43.716,10.401;Sassari,40.726,8.556;Côme,45.808,9.085;Lecce,40.352,18.17;Syracuse,37.075,15.286;Sienne,43.318,11.331;Potenza,40.64,15.806;Matera,40.666,16.604;Campobasso,41.56,14.662;L\'Aquila,42.35,13.4;Aoste,45.737,7.315',
+    DE: 'Berlin,52.52,13.405;Hambourg,53.551,9.994;Munich,48.135,11.582;Cologne,50.938,6.96;Francfort,50.11,8.682;Stuttgart,48.776,9.183;Düsseldorf,51.227,6.774;Leipzig,51.34,12.375;Dortmund,51.514,7.468;Essen,51.456,7.012;Brême,53.079,8.802;Dresde,51.05,13.738;Hanovre,52.376,9.732;Nuremberg,49.452,11.077;Duisbourg,51.435,6.763;Bochum,51.482,7.216;Wuppertal,51.257,7.15;Bielefeld,52.021,8.532;Bonn,50.737,7.098;Münster,51.961,7.626;Mannheim,49.487,8.466;Karlsruhe,49.007,8.404;Augsbourg,48.371,10.898;Wiesbaden,50.078,8.24;Aix-la-Chapelle,50.776,6.084;Kiel,54.323,10.123;Magdebourg,52.12,11.627;Fribourg-en-Brisgau,47.999,7.842;Lübeck,53.866,10.687;Erfurt,50.978,11.029;Rostock,54.092,12.1;Mayence,49.993,8.247;Kassel,51.312,9.48;Sarrebruck,49.24,6.997;Potsdam,52.391,13.065;Ratisbonne,49.013,12.102;Würzburg,49.792,9.953;Heidelberg,49.399,8.672;Ulm,48.402,9.988;Göttingen,51.541,9.916;Coblence,50.356,7.594;Trèves,49.75,6.637;Schwerin,53.636,11.401;Flensbourg,54.794,9.437;Constance,47.66,9.175;Passau,48.574,13.461',
+    GB: 'Londres,51.507,-0.128;Birmingham,52.486,-1.89;Manchester,53.48,-2.242;Glasgow,55.864,-4.252;Liverpool,53.408,-2.991;Leeds,53.8,-1.549;Sheffield,53.381,-1.47;Édimbourg,55.953,-3.188;Bristol,51.455,-2.588;Leicester,52.637,-1.135;Newcastle,54.978,-1.618;Nottingham,52.954,-1.158;Cardiff,51.481,-3.179;Belfast,54.597,-5.93;Southampton,50.91,-1.404;Brighton,50.823,-0.137;Coventry,52.407,-1.512;Hull,53.745,-0.336;Plymouth,50.375,-4.143;Stoke-on-Trent,53.003,-2.179;Portsmouth,50.805,-1.087;Aberdeen,57.149,-2.094;Swansea,51.621,-3.944;Oxford,51.752,-1.258;Cambridge,52.205,0.122;York,53.96,-1.087;Norwich,52.63,1.297;Dundee,56.462,-2.971;Exeter,50.718,-3.534;Bournemouth,50.72,-1.88;Blackpool,53.817,-3.05;Bath,51.38,-2.36;Inverness,57.478,-4.225;Canterbury,51.28,1.08;Carlisle,54.892,-2.932;Derry,54.997,-7.309;Stirling,56.117,-3.937;Douvres,51.127,1.313',
+    IE: 'Dublin,53.35,-6.26;Cork,51.898,-8.471;Limerick,52.668,-8.63;Galway,53.271,-9.057;Waterford,52.259,-7.11;Drogheda,53.718,-6.348;Swords,53.459,-6.218;Dundalk,54.0,-6.405;Bray,53.203,-6.098;Navan,53.652,-6.681;Kilkenny,52.654,-7.244;Ennis,52.843,-8.986;Carlow,52.841,-6.926;Tralee,52.271,-9.7;Mullingar,53.525,-7.338;Athlone,53.423,-7.94;Letterkenny,54.95,-7.735;Sligo,54.277,-8.476;Wexford,52.334,-6.458;Clonmel,52.355,-7.704;Killarney,52.059,-9.505;Castlebar,53.856,-9.298;Westport,53.8,-9.52;Donegal,54.654,-8.11',
+    NL: 'Amsterdam,52.37,4.9;Rotterdam,51.924,4.478;La Haye,52.07,4.3;Utrecht,52.091,5.122;Eindhoven,51.441,5.47;Groningue,53.219,6.567;Tilbourg,51.555,5.091;Almere,52.371,5.222;Breda,51.589,4.776;Nimègue,51.842,5.853;Apeldoorn,52.211,5.97;Haarlem,52.387,4.646;Arnhem,51.985,5.899;Enschede,52.221,6.894;Amersfoort,52.156,5.388;Zwolle,52.517,6.083;Bois-le-Duc,51.697,5.304;Leyde,52.16,4.497;Maastricht,50.851,5.691;Dordrecht,51.813,4.69;Leeuwarden,53.201,5.799;Delft,52.012,4.357;Alkmaar,52.632,4.75;Venlo,51.37,6.172;Lelystad,52.518,5.471;Den Helder,52.959,4.76;Assen,52.993,6.564;Middelbourg,51.499,3.61;Flessingue,51.442,3.573',
+    PL: 'Varsovie,52.23,21.012;Cracovie,50.065,19.945;Łódź,51.759,19.456;Wrocław,51.108,17.039;Poznań,52.406,16.925;Gdańsk,54.352,18.646;Szczecin,53.429,14.553;Bydgoszcz,53.123,18.008;Lublin,51.246,22.568;Białystok,53.133,23.168;Katowice,50.264,19.023;Gdynia,54.519,18.53;Częstochowa,50.812,19.12;Radom,51.402,21.147;Toruń,53.013,18.598;Rzeszów,50.041,21.999;Kielce,50.866,20.628;Olsztyn,53.778,20.48;Opole,50.675,17.921;Zielona Góra,51.935,15.506;Gorzów Wielkopolski,52.731,15.24;Elbląg,54.156,19.404;Płock,52.547,19.706;Tarnów,50.013,20.989;Koszalin,54.194,16.172;Kalisz,51.761,18.091;Legnica,51.21,16.161;Suwałki,54.111,22.93;Przemyśl,49.784,22.768;Zakopane,49.299,19.95',
+    GR: 'Athènes,37.984,23.728;Thessalonique,40.64,22.944;Patras,38.246,21.735;Le Pirée,37.942,23.646;Héraklion,35.339,25.144;Larissa,39.639,22.419;Volos,39.362,22.942;Ioannina,39.665,20.853;La Canée,35.514,24.018;Rhodes,36.434,28.217;Kalamata,37.039,22.114;Serres,41.086,23.548;Alexandroupoli,40.848,25.874;Kavala,40.938,24.413;Lamia,38.9,22.433;Chalcis,38.463,23.6;Kozani,40.3,21.789;Komotini,41.119,25.405;Tripoli,37.51,22.379;Corfou,39.624,19.921;Drama,41.15,24.147;Mytilène,39.11,26.555;Rethymnon,35.366,24.482;Corinthe,37.94,22.932;Nauplie,37.567,22.8;Sparte,37.074,22.43;Kalambaka,39.705,21.626;Delphes,38.48,22.494;Mykonos,37.446,25.329;Fira (Santorin),36.417,25.432',
+    MA: 'Casablanca,33.573,-7.59;Fès,34.033,-5.0;Tanger,35.759,-5.834;Marrakech,31.629,-7.981;Salé,34.053,-6.798;Meknès,33.895,-5.555;Rabat,34.02,-6.84;Oujda,34.682,-1.908;Kénitra,34.261,-6.58;Agadir,30.428,-9.598;Tétouan,35.571,-5.372;Safi,32.3,-9.237;Mohammédia,33.686,-7.383;Khouribga,32.881,-6.906;El Jadida,33.231,-8.5;Béni Mellal,32.337,-6.349;Nador,35.168,-2.933;Taza,34.21,-4.01;Settat,33.0,-7.616;Larache,35.193,-6.156;Ksar El Kébir,35.0,-5.9;Guelmim,28.987,-10.057;Errachidia,31.931,-4.424;Ouarzazate,30.919,-6.893;Essaouira,31.513,-9.77;Tiznit,29.698,-9.731;Taroudant,30.47,-8.877;Al Hoceïma,35.25,-3.937;Chefchaouen,35.171,-5.27;Ifrane,33.533,-5.1;Azrou,33.434,-5.221;Zagora,30.332,-5.838',
+    DZ: 'Alger,36.754,3.059;Oran,35.697,-0.633;Constantine,36.365,6.615;Annaba,36.9,7.767;Blida,36.47,2.828;Batna,35.556,6.174;Djelfa,34.673,3.263;Sétif,36.19,5.41;Sidi Bel Abbès,35.19,-0.63;Biskra,34.85,5.728;Tébessa,35.404,8.124;El Oued,33.368,6.867;Skikda,36.876,6.909;Tiaret,35.371,1.317;Béjaïa,36.751,5.056;Tlemcen,34.878,-1.315;Ouargla,31.95,5.325;Béchar,31.617,-2.217;Mostaganem,35.931,0.089;Chlef,36.165,1.334;Tizi Ouzou,36.717,4.05;Médéa,36.264,2.753;M\'Sila,35.706,4.542;Laghouat,33.8,2.865;Ghardaïa,32.49,3.67;Mascara,35.398,0.14;Jijel,36.82,5.766;Saïda,34.83,0.15;Touggourt,33.1,6.067;El Bayadh,33.683,1.017;Adrar,27.874,-0.294;Tamanrasset,22.785,5.523;In Salah,27.197,2.483;Timimoun,29.263,0.231;Djanet,24.554,9.485',
+    TN: 'Tunis,36.806,10.181;Sfax,34.74,10.76;Sousse,35.826,10.636;Kairouan,35.678,10.096;Bizerte,37.274,9.874;Gabès,33.881,10.098;Ariana,36.866,10.193;Gafsa,34.425,8.784;Monastir,35.778,10.826;Ben Arous,36.754,10.231;Kasserine,35.168,8.836;Médenine,33.354,10.505;Nabeul,36.456,10.737;Zarzis,33.504,11.112;Houmt Souk (Djerba),33.876,10.857;Hammamet,36.4,10.617;Béja,36.726,9.184;Jendouba,36.501,8.78;Mahdia,35.504,11.062;Sidi Bouzid,35.038,9.484;Tataouine,32.929,10.452;Tozeur,33.92,8.134;Le Kef,36.174,8.705;Kébili,33.705,8.969;Siliana,36.085,9.371;Zaghouan,36.402,10.143;Tabarka,36.955,8.758;Douz,33.457,9.02',
+    SN: 'Dakar,14.716,-17.467;Touba,14.85,-15.883;Thiès,14.791,-16.926;Rufisque,14.716,-17.274;Kaolack,14.152,-16.073;Mbour,14.42,-16.966;Saint-Louis,16.026,-16.489;Ziguinchor,12.583,-16.272;Diourbel,14.655,-16.231;Louga,15.619,-16.224;Tambacounda,13.771,-13.667;Mbacké,14.79,-15.909;Kolda,12.894,-14.942;Richard-Toll,16.462,-15.701;Tivaouane,14.95,-16.817;Joal-Fadiouth,14.166,-16.833;Kaffrine,14.106,-15.55;Fatick,14.339,-16.411;Vélingara,13.15,-14.112;Sédhiou,12.708,-15.557;Matam,15.656,-13.255;Kédougou,12.556,-12.174;Podor,16.652,-14.959;Linguère,15.393,-15.119;Bakel,14.905,-12.457',
+    CI: 'Abidjan,5.36,-4.008;Bouaké,7.69,-5.03;Daloa,6.877,-6.45;Yamoussoukro,6.827,-5.289;San-Pédro,4.748,-6.636;Korhogo,9.458,-5.629;Man,7.413,-7.554;Divo,5.837,-5.357;Gagnoa,6.131,-5.951;Abengourou,6.73,-3.496;Soubré,5.785,-6.594;Séguéla,7.961,-6.673;Agboville,5.928,-4.213;Grand-Bassam,5.212,-3.739;Bondoukou,8.04,-2.8;Odienné,9.51,-7.565;Ferkessédougou,9.593,-5.197;Dimbokro,6.65,-4.708;Katiola,8.137,-5.1;Aboisso,5.468,-3.207;Sassandra,4.95,-6.083;Touba,8.283,-7.683;Bouna,9.27,-3.0;Tabou,4.423,-7.353',
+    US: 'New York,40.713,-74.006;Los Angeles,34.052,-118.244;Chicago,41.878,-87.63;Houston,29.76,-95.37;Phoenix,33.448,-112.074;Philadelphie,39.953,-75.165;San Antonio,29.424,-98.494;San Diego,32.716,-117.161;Dallas,32.777,-96.797;Austin,30.267,-97.743;Jacksonville,30.332,-81.656;San Francisco,37.775,-122.419;Columbus,39.961,-82.999;Charlotte,35.227,-80.843;Indianapolis,39.768,-86.158;Seattle,47.606,-122.332;Denver,39.739,-104.99;Washington,38.907,-77.037;Boston,42.36,-71.059;El Paso,31.762,-106.485;Nashville,36.163,-86.781;Détroit,42.331,-83.046;Oklahoma City,35.468,-97.516;Portland,45.515,-122.678;Las Vegas,36.17,-115.14;Memphis,35.149,-90.049;Louisville,38.253,-85.759;Baltimore,39.29,-76.612;Milwaukee,43.039,-87.906;Albuquerque,35.084,-106.651;Tucson,32.222,-110.975;Sacramento,38.582,-121.494;Kansas City,39.1,-94.579;Atlanta,33.749,-84.388;Omaha,41.257,-95.935;Miami,25.762,-80.192;Minneapolis,44.978,-93.265;Tampa,27.951,-82.457;La Nouvelle-Orléans,29.951,-90.072;Cleveland,41.499,-81.694;Orlando,28.538,-81.379;Saint-Louis,38.627,-90.199;Pittsburgh,40.441,-79.996;Cincinnati,39.103,-84.512;Buffalo,42.886,-78.878;Salt Lake City,40.761,-111.891;Richmond,37.541,-77.436;Boise,43.615,-116.202;Spokane,47.659,-117.426;Des Moines,41.586,-93.625;Little Rock,34.746,-92.29;Reno,39.53,-119.814;Savannah,32.081,-81.091;Charleston,32.776,-79.931;Fargo,46.877,-96.79;Billings,45.783,-108.5;Santa Fe,35.687,-105.938;Cheyenne,41.14,-104.82;Bismarck,46.808,-100.784',
+    CA: 'Toronto,43.653,-79.383;Montréal,45.502,-73.567;Calgary,51.045,-114.072;Ottawa,45.421,-75.697;Edmonton,53.546,-113.494;Winnipeg,49.895,-97.138;Vancouver,49.283,-123.121;Québec,46.813,-71.208;Hamilton,43.256,-79.869;Halifax,44.649,-63.575;London,42.984,-81.246;Victoria,48.428,-123.366;Windsor,42.315,-83.036;Saskatoon,52.133,-106.67;Regina,50.445,-104.619;Sherbrooke,45.404,-71.893;Saint-Jean de Terre-Neuve,47.561,-52.713;Kelowna,49.888,-119.496;Trois-Rivières,46.343,-72.543;Kingston,44.231,-76.486;Saguenay,48.428,-71.068;Moncton,46.088,-64.778;Sudbury,46.49,-80.99;Thunder Bay,48.382,-89.247;Fredericton,45.964,-66.643;Charlottetown,46.238,-63.131;Prince George,53.917,-122.75;Fort McMurray,56.727,-111.381;Rimouski,48.449,-68.524;Rouyn-Noranda,48.236,-79.023;Whitehorse,60.721,-135.057;Yellowknife,62.454,-114.372;Iqaluit,63.749,-68.522;Gaspé,48.833,-64.483;Banff,51.178,-115.571;Churchill,58.768,-94.165',
+    MX: 'Mexico,19.433,-99.133;Tijuana,32.514,-117.038;León,21.122,-101.682;Puebla,19.041,-98.206;Ciudad Juárez,31.69,-106.424;Guadalajara,20.659,-103.349;Monterrey,25.686,-100.316;Mérida,20.967,-89.624;Cancún,21.161,-86.851;Querétaro,20.588,-100.389;Chihuahua,28.632,-106.069;San Luis Potosí,22.157,-100.986;Aguascalientes,21.885,-102.291;Hermosillo,29.073,-110.956;Mexicali,32.625,-115.454;Culiacán,24.809,-107.394;Saltillo,25.438,-100.973;Acapulco,16.853,-99.823;Morelia,19.706,-101.195;Toluca,19.283,-99.655;Veracruz,19.173,-96.134;Durango,24.027,-104.653;Villahermosa,17.989,-92.947;Tuxtla Gutiérrez,16.753,-93.116;Cuernavaca,18.924,-99.221;Matamoros,25.869,-97.502;Nuevo Laredo,27.476,-99.516;Mazatlán,23.249,-106.411;Oaxaca,17.073,-96.726;Tampico,22.233,-97.861;Ensenada,31.867,-116.6;Puerto Vallarta,20.653,-105.225;Zacatecas,22.771,-102.583;La Paz,24.142,-110.313;Campeche,19.845,-90.524;Guanajuato,21.019,-101.257;Chetumal,18.5,-88.3',
+    BR: 'São Paulo,-23.551,-46.633;Rio de Janeiro,-22.907,-43.173;Brasilia,-15.794,-47.882;Salvador,-12.978,-38.501;Fortaleza,-3.732,-38.527;Belo Horizonte,-19.917,-43.935;Manaus,-3.119,-60.022;Curitiba,-25.429,-49.271;Recife,-8.048,-34.877;Goiânia,-16.686,-49.265;Belém,-1.456,-48.49;Porto Alegre,-30.035,-51.218;São Luís,-2.53,-44.303;Campinas,-22.907,-47.063;Maceió,-9.665,-35.735;Natal,-5.795,-35.209;Teresina,-5.092,-42.804;Campo Grande,-20.469,-54.62;João Pessoa,-7.115,-34.864;Cuiabá,-15.601,-56.097;Feira de Santana,-12.266,-38.967;Florianópolis,-27.595,-48.548;Aracaju,-10.947,-37.073;Uberlândia,-18.919,-48.277;Ribeirão Preto,-21.178,-47.81;Porto Velho,-8.761,-63.904;Londrina,-23.31,-51.163;Juiz de Fora,-21.764,-43.35;Macapá,0.035,-51.07;Santos,-23.961,-46.333;Vitória,-20.315,-40.312;Boa Vista,2.82,-60.672;Rio Branco,-9.975,-67.81;Pelotas,-31.772,-52.343;Palmas,-10.184,-48.334;Petrolina,-9.389,-40.503;Imperatriz,-5.526,-47.479;Santarém,-2.443,-54.708;Marabá,-5.381,-49.132;Foz do Iguaçu,-25.547,-54.588;Ouro Preto,-20.386,-43.503;Paraty,-23.218,-44.713',
+    AR: 'Buenos Aires,-34.604,-58.382;Córdoba,-31.42,-64.188;Rosario,-32.944,-60.65;Mendoza,-32.889,-68.845;San Miguel de Tucumán,-26.808,-65.218;La Plata,-34.921,-57.955;Mar del Plata,-38.005,-57.543;Salta,-24.782,-65.423;Santa Fe,-31.633,-60.7;San Juan,-31.537,-68.536;Resistencia,-27.451,-58.987;Neuquén,-38.952,-68.059;Santiago del Estero,-27.784,-64.264;Corrientes,-27.469,-58.83;Posadas,-27.367,-55.896;Bahía Blanca,-38.719,-62.272;San Salvador de Jujuy,-24.186,-65.3;Paraná,-31.732,-60.524;Formosa,-26.185,-58.175;San Luis,-33.301,-66.338;Río Cuarto,-33.123,-64.349;Comodoro Rivadavia,-45.865,-67.497;La Rioja,-29.413,-66.856;Catamarca,-28.47,-65.785;San Carlos de Bariloche,-41.133,-71.31;Santa Rosa,-36.62,-64.29;Río Gallegos,-51.623,-69.216;Puerto Madryn,-42.769,-65.038;Viedma,-40.813,-62.997;Rawson,-43.3,-65.102;Ushuaia,-54.802,-68.303;Puerto Iguazú,-25.597,-54.578;El Calafate,-50.338,-72.265',
+    JP: 'Tokyo,35.676,139.65;Yokohama,35.444,139.638;Osaka,34.694,135.502;Nagoya,35.181,136.906;Sapporo,43.062,141.354;Fukuoka,33.59,130.402;Kobe,34.69,135.196;Kyoto,35.012,135.768;Saitama,35.861,139.646;Hiroshima,34.385,132.455;Sendai,38.268,140.87;Chiba,35.607,140.106;Kitakyushu,33.883,130.875;Hamamatsu,34.711,137.726;Niigata,37.916,139.036;Kumamoto,32.803,130.708;Okayama,34.655,133.919;Shizuoka,34.976,138.383;Kagoshima,31.597,130.557;Utsunomiya,36.555,139.883;Matsuyama,33.839,132.766;Kanazawa,36.561,136.656;Ōita,33.238,131.613;Nagasaki,32.75,129.877;Toyama,36.696,137.214;Gifu,35.423,136.761;Miyazaki,31.911,131.424;Nagano,36.648,138.195;Wakayama,34.226,135.167;Nara,34.685,135.805;Takamatsu,34.343,134.047;Asahikawa,43.771,142.365;Kōchi,33.559,133.531;Akita,39.72,140.103;Aomori,40.822,140.747;Morioka,39.702,141.154;Fukushima,37.75,140.468;Hakodate,41.768,140.729;Mito,36.366,140.471;Fukui,36.064,136.22;Tokushima,34.07,134.555;Yamagata,38.24,140.363;Maebashi,36.39,139.06;Kōfu,35.662,138.568;Saga,33.249,130.299;Yamaguchi,34.178,131.474;Matsue,35.468,133.049;Tottori,35.501,134.235;Kushiro,42.985,144.381',
+    CN: 'Shanghai,31.23,121.474;Pékin,39.904,116.407;Chongqing,29.563,106.551;Tianjin,39.343,117.362;Canton,23.129,113.264;Shenzhen,22.543,114.058;Chengdu,30.573,104.066;Nankin,32.06,118.797;Wuhan,30.593,114.305;Xi\'an,34.341,108.94;Hangzhou,30.274,120.155;Shenyang,41.806,123.432;Harbin,45.803,126.535;Hong Kong,22.32,114.17;Zhengzhou,34.747,113.625;Qingdao,36.067,120.383;Dalian,38.914,121.615;Changsha,28.228,112.939;Jinan,36.651,117.12;Kunming,25.04,102.712;Suzhou,31.299,120.585;Changchun,43.817,125.324;Taiyuan,37.871,112.549;Hefei,31.82,117.227;Shijiazhuang,38.042,114.515;Ürümqi,43.825,87.617;Fuzhou,26.074,119.296;Xiamen,24.48,118.089;Nanning,22.817,108.366;Guiyang,26.647,106.63;Lanzhou,36.061,103.834;Nanchang,28.682,115.858;Hohhot,40.842,111.749;Baotou,40.658,109.84;Luoyang,34.62,112.454;Datong,40.077,113.3;Guilin,25.274,110.29;Haikou,20.044,110.199;Xining,36.617,101.778;Yinchuan,38.487,106.231;Qiqihar,47.354,123.918;Macao,22.199,113.544;Lhassa,29.652,91.172;Kachgar,39.47,75.989;Lijiang,26.855,100.227;Hami,42.818,93.515;Golmud,36.407,94.904',
+    IN: 'Bombay,19.076,72.878;Delhi,28.704,77.102;Bangalore,12.972,77.595;Hyderabad,17.385,78.487;Ahmedabad,23.023,72.571;Chennai,13.083,80.271;Calcutta,22.573,88.364;Surat,21.17,72.831;Pune,18.52,73.857;Jaipur,26.912,75.787;Lucknow,26.847,80.947;Kanpur,26.449,80.332;Nagpur,21.146,79.088;Indore,22.72,75.858;Bhopal,23.26,77.413;Visakhapatnam,17.687,83.218;Patna,25.594,85.138;Vadodara,22.307,73.181;Ludhiana,30.901,75.857;Agra,27.177,78.008;Nashik,19.998,73.79;Varanasi,25.318,82.974;Srinagar,34.084,74.797;Amritsar,31.634,74.872;Ranchi,23.344,85.31;Coimbatore,11.017,76.956;Jodhpur,26.238,73.024;Madurai,9.925,78.12;Raipur,21.251,81.63;Guwahati,26.145,91.736;Chandigarh,30.733,76.779;Gwalior,26.218,78.183;Kochi,9.931,76.267;Thiruvananthapuram,8.524,76.936;Bhubaneswar,20.296,85.825;Dehradun,30.317,78.032;Bikaner,28.022,73.312;Mangalore,12.915,74.856;Udaipur,24.585,73.712;Imphal,24.817,93.937;Pondichéry,11.934,79.83;Shillong,25.578,91.893;Panaji,15.49,73.828;Shimla,31.105,77.173;Darjeeling,27.041,88.266;Gangtok,27.339,88.607;Jaisalmer,26.915,70.922;Leh,34.153,77.577',
+    AU: 'Sydney,-33.869,151.209;Melbourne,-37.814,144.963;Brisbane,-27.47,153.026;Perth,-31.953,115.857;Adélaïde,-34.929,138.601;Gold Coast,-28.017,153.4;Newcastle,-32.928,151.776;Canberra,-35.281,149.13;Wollongong,-34.425,150.893;Geelong,-38.149,144.361;Hobart,-42.882,147.327;Townsville,-19.259,146.817;Cairns,-16.919,145.778;Toowoomba,-27.561,151.954;Darwin,-12.463,130.842;Ballarat,-37.562,143.85;Bendigo,-36.757,144.279;Albury,-36.08,146.916;Launceston,-41.437,147.139;Mackay,-21.141,149.186;Rockhampton,-23.378,150.512;Bunbury,-33.327,115.637;Bundaberg,-24.866,152.349;Wagga Wagga,-35.117,147.367;Mildura,-34.185,142.162;Geraldton,-28.774,114.615;Dubbo,-32.243,148.604;Kalgoorlie,-30.749,121.465;Albany,-35.023,117.884;Devonport,-41.18,146.35;Mount Isa,-20.726,139.497;Alice Springs,-23.698,133.881;Broken Hill,-31.953,141.453;Port Hedland,-20.31,118.606;Port Augusta,-32.493,137.765;Broome,-17.961,122.236;Esperance,-33.861,121.892;Katherine,-14.465,132.264;Carnarvon,-24.884,113.66;Exmouth,-21.931,114.128;Longreach,-23.442,144.25;Tennant Creek,-19.646,134.191;Coober Pedy,-29.013,134.755',
   };
+  const CITIES = {};
+  for (const [cc, s] of Object.entries(CITY_DATA)) {
+    CITIES[cc] = s.split(';').map((x, i) => {
+      const [name, lat, lng] = x.split(',');
+      return { name, lat: +lat, lng: +lng, key: cc + i, sub: '' };
+    });
+  }
 
   // ================= Données France (geo.api.gouv.fr) =================
   const frDeps = once(async () => (await fetchJSON(`${GEO}/departements?fields=nom,code`)).filter(d => !d.code.startsWith('97')));
@@ -449,17 +667,16 @@
   };
 
   // ================= Données monde =================
-  const countries = once(async () => (await fetchJSON(COUNTRIES_URL, {}, 20000))
-    .map(c => ({
-      cc: c.cca2, name: c.translations?.fra?.common || c.name.common, en: c.name.common,
-      region: c.region, sub: c.subregion, pop: c.population || 0,
-      lat: c.latlng?.[0], lng: c.latlng?.[1],
-      capital: c.capital?.[0] || null, capLat: c.capitalInfo?.latlng?.[0], capLng: c.capitalInfo?.latlng?.[1],
-    }))
-    .filter(c => c.lat != null && c.lng != null && c.region !== 'Antarctic'));
-  const countriesIn = async z => (await countries()).filter(c => !z.filter || z.filter(c));
+  const COUNTRIES = COUNTRY_DATA.trim().split('\n').map(line => {
+    const [cc, name, cont, pop, lat, lng, cap, capLat, capLng, alias] = line.split('|');
+    const caps = cap.split('/');
+    return { cc, name, cont, pop: +pop * 1e6, lat: +lat, lng: +lng,
+      capital: caps[0], capNames: caps, capLat: +capLat, capLng: +capLng,
+      names: [name, ...(alias ? alias.split('/') : [])] };
+  });
+  const countries = async () => COUNTRIES;
+  const countriesIn = async z => COUNTRIES.filter(c => !z.filter || z.filter(c));
   const MIN_POP = { facile: 15e6, moyen: 2e6, difficile: 0 };
-  const capName = c => CAP_FR[c.capital] || c.capital;
 
   // Lieu sous un point (pays + région), via Photon puis Nominatim en secours
   const reverseInfo = memo(async key => {
@@ -499,7 +716,7 @@
   }
 
   const countryPlace = c => ({ name: c.name, sub: '', cc: c.cc, area: true, key: 'p' + c.cc, lat: c.lat, lng: c.lng });
-  const capitalPlace = c => ({ name: capName(c), sub: `(${c.name})`, key: 'k' + c.cc, lat: c.capLat, lng: c.capLng });
+  const capitalPlace = c => ({ name: c.capital, sub: `(${c.name})`, key: 'k' + c.cc, lat: c.capLat, lng: c.capLng });
   const sortMatches = (list, q, names) => {
     const n = norm(q);
     return list.map(c => {
@@ -520,7 +737,7 @@
     const capitales = {
       async search(q) {
         const l = (await countriesIn(zone)).filter(c => c.capital && c.capLat != null);
-        return sortMatches(l, q, c => [capName(c), c.capital]).map(capitalPlace);
+        return sortMatches(l, q, c => c.capNames).map(capitalPlace);
       },
       async pick(diff, used) { return capitalPlace(await pickCountry(zone, diff, used, 'k', true)); },
       async point(diff) {
@@ -531,7 +748,7 @@
     };
     return {
       pays: {
-        async search(q) { return sortMatches(await countriesIn(zone), q, c => [c.name, c.en]).map(countryPlace); },
+        async search(q) { return sortMatches(await countriesIn(zone), q, c => c.names).map(countryPlace); },
         async inside(p, ll) { return (await whereIs(ll))?.cc === p.cc; },
         async pick(diff, used) { return countryPlace(await pickCountry(zone, diff, used, 'p')); },
         async point(diff) { const c = await pickCountry(zone, diff, new Set(), 'p'); return { lat: c.lat, lng: c.lng }; },
@@ -539,8 +756,10 @@
       capitales,
       villes: {
         async search(q) {
-          const [res, all] = await Promise.all([photon(q, 'city', zone), countries().catch(() => [])]);
-          const byCc = new Map(all.map(c => [c.cc, c]));
+          let res;
+          try { res = await photon(q, 'city', zone); }
+          catch { return localCities(q, (await countriesIn(zone)).map(c => c.cc)); }
+          const byCc = new Map(COUNTRIES.map(c => [c.cc, c]));
           return res.filter(r => !zone.filter || !byCc.has(r.cc) || zone.filter(byCc.get(r.cc))).slice(0, 8)
             .map(r => ({ name: r.name, sub: [r.state, r.country].filter(Boolean).join(', '), lat: r.lat, lng: r.lng }));
         },
@@ -551,19 +770,28 @@
   };
 
   // ================= Autres pays (Photon + Overpass) =================
-  const overpass = q => fetchJSON(OVERPASS, {
-    method: 'POST', body: 'data=' + enc(q),
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  }, 60000);
-  const ovCities = memo(async cc => {
-    const q = t => `[out:json][timeout:60];area["ISO3166-1"="${cc}"][admin_level=2]->.a;node["place"="${t}"](area.a);out;`;
-    let els = (await overpass(q('city'))).elements || [];
-    if (els.length < 30) els = els.concat((await overpass(q('town'))).elements || []);
-    return els.filter(e => e.tags?.name && e.lat != null).map(e => ({
-      name: e.tags['name:fr'] || e.tags.name, key: 'o' + e.id, lat: e.lat, lng: e.lon,
-      pop: parseInt(String(e.tags.population || '0').replace(/\D/g, ''), 10) || 0, sub: '',
-    })).sort((a, b) => b.pop - a.pop);
-  });
+  async function overpass(q) {
+    let err;
+    for (const url of OVERPASS) {
+      try {
+        return await fetchJSON(url, {
+          method: 'POST', body: 'data=' + enc(q),
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        }, 30000);
+      } catch (e) { err = e; }
+    }
+    throw err;
+  }
+  // Recherche dans les villes intégrées (secours si la recherche en ligne ne répond pas)
+  function localCities(q, ccs) {
+    const list = [];
+    for (const cc of ccs) {
+      (CITIES[cc] || []).forEach((c, i) => list.push({ ...c, pop: -i, sub: COUNTRIES.find(x => x.cc === cc)?.name || '' }));
+      const k = COUNTRIES.find(x => x.cc === cc);
+      if (k) list.push({ name: k.capital, lat: k.capLat, lng: k.capLng, pop: k.pop, sub: k.name, names: k.capNames });
+    }
+    return sortMatches(list, q, c => c.names || [c.name]);
+  }
   const ovRegions = memo(async cc => {
     const q = `[out:json][timeout:60];area["ISO3166-1"="${cc}"][admin_level=2]->.a;rel["boundary"="administrative"]["admin_level"="4"](area.a);out center tags;`;
     return ((await overpass(q)).elements || [])
@@ -576,15 +804,18 @@
   });
   const countryProviders = zone => {
     const pickCity = async (diff, used) => {
-      const n = { facile: 12, moyen: 50, difficile: 250 }[diff];
-      const l = (await ovCities(zone.cc)).slice(0, n);
+      const n = { facile: 8, moyen: 20, difficile: 999 }[diff];
+      const l = CITIES[zone.cc].slice(0, n);
       if (!l.length) throw new Error('aucune ville');
       return rand(l.filter(c => !used.has(c.key))) || rand(l);
     };
     return {
       villes: {
         async search(q) {
-          return (await photon(q, 'city', zone)).filter(r => r.cc === zone.cc).slice(0, 8)
+          let res;
+          try { res = await photon(q, 'city', zone); }
+          catch { return localCities(q, [zone.cc]).map(c => ({ ...c, sub: '' })); }
+          return res.filter(r => r.cc === zone.cc).slice(0, 8)
             .map(r => ({ name: r.name, sub: r.state, lat: r.lat, lng: r.lng }));
         },
         pick: pickCity,
