@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Où est cette ville ?</title>
+<title>GéoDéfi</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
   :root {
@@ -14,10 +14,11 @@
     --accent: #2b59c3;
     --accent-text: #ffffff;
     --border: #e2dfd7;
+    --chip: #f0eee8;
     --good: #1f8a4c;
     --mid: #c98a0b;
     --bad: #c23b3b;
-    --shadow: 0 8px 30px rgba(0,0,0,.12);
+    --shadow: 0 8px 30px rgba(0,0,0,.18);
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -28,6 +29,7 @@
       --accent: #6d93f0;
       --accent-text: #0e1220;
       --border: #33333a;
+      --chip: #2a2a30;
       --good: #4cc27f;
       --mid: #e3ac3a;
       --bad: #ef6b6b;
@@ -35,94 +37,172 @@
     }
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  html, body { margin: 0; height: 100%; background: #0b0f14; color: var(--text);
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  #map { position: fixed; inset: 0; background: var(--bg); }
+  #map { position: fixed; inset: 0; background: #0b0f14; }
+  [hidden] { display: none !important; }
 
-  .top {
-    position: fixed; top: 12px; left: 12px; right: 12px; z-index: 1000;
-    display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;
-    pointer-events: none;
-  }
   .card {
     background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
-    box-shadow: var(--shadow); pointer-events: auto;
+    box-shadow: var(--shadow);
   }
-  .hint { padding: 10px 14px; font-size: 14px; max-width: 320px; }
-  .hint b { display: block; font-size: 16px; margin-bottom: 2px; }
-  .stats { padding: 10px 14px; font-size: 13px; text-align: right; min-width: 120px; }
-  .stats .big { font-size: 20px; font-weight: 700; }
-  .stats .muted { color: var(--muted); }
-
-  .sheet {
-    position: fixed; left: 50%; bottom: 16px; transform: translate(-50%, 140%);
-    width: min(440px, calc(100% - 32px)); z-index: 1001; padding: 16px;
-    transition: transform .25s ease;
-  }
-  .sheet.open { transform: translate(-50%, 0); }
-  .sheet h2 { margin: 0 0 4px; font-size: 17px; }
-  .sheet p { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
-  .row { display: flex; gap: 8px; position: relative; }
-  input[type=text] {
-    flex: 1; min-width: 0; font-size: 16px; padding: 11px 12px; border-radius: 10px;
-    border: 1px solid var(--border); background: var(--bg); color: var(--text); outline: none;
-  }
-  input[type=text]:focus { border-color: var(--accent); }
   button {
     font: inherit; font-size: 15px; font-weight: 600; padding: 11px 16px; border-radius: 10px;
     border: 0; background: var(--accent); color: var(--accent-text); cursor: pointer;
   }
-  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
   button:disabled { opacity: .5; cursor: default; }
+
+  /* ---------- Menu ---------- */
+  .overlay {
+    position: fixed; inset: 0; z-index: 2000; display: flex; align-items: flex-start; justify-content: center;
+    padding: 16px; overflow-y: auto; background: rgba(5,8,12,.55);
+  }
+  .menu { width: min(480px, 100%); padding: 20px; margin: auto 0; }
+  .menu h1 { margin: 0; font-size: 26px; }
+  .menu .lead { margin: 4px 0 16px; color: var(--muted); font-size: 14px; }
+  .field { margin-bottom: 14px; }
+  .field > span { display: block; font-size: 12px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--muted); margin-bottom: 6px; }
+  select {
+    width: 100%; font: inherit; font-size: 16px; padding: 10px 12px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--chip); color: var(--text);
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    background: var(--chip); color: var(--text); border: 1px solid var(--border);
+    padding: 8px 12px; font-size: 14px; border-radius: 999px;
+  }
+  .chip.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .modes { display: grid; gap: 6px; }
+  .mode {
+    text-align: left; background: var(--chip); color: var(--text); border: 1px solid var(--border);
+    padding: 10px 12px; font-weight: 400;
+  }
+  .mode b { display: block; font-size: 15px; margin-bottom: 2px; }
+  .mode small { color: var(--muted); font-size: 13px; }
+  .mode.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .record { font-size: 14px; color: var(--muted); min-height: 20px; margin-bottom: 10px; }
+  .menu .primary { width: 100%; font-size: 17px; padding: 13px; }
+
+  /* ---------- HUD ---------- */
+  .hud {
+    position: fixed; top: 12px; left: 12px; right: 12px; z-index: 1000;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; pointer-events: none;
+  }
+  .hud .card { pointer-events: auto; }
+  .prompt { position: relative; display: flex; gap: 10px; align-items: center; padding: 8px 12px 10px 8px;
+    min-width: 0; flex: 1; max-width: 420px; overflow: hidden; }
+  .icon { background: var(--chip); color: var(--text); padding: 8px 11px; font-size: 18px; line-height: 1; flex: none; }
+  .ptext { min-width: 0; }
+  .plabel { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .pmain { font-size: 18px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+  .timer { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: var(--chip); }
+  .timer div { height: 100%; width: 100%; background: var(--good); transition: width .1s linear; }
+  .timer div.low { background: var(--bad); }
+  .stats { padding: 8px 12px; text-align: right; flex: none; }
+  .stats .big { font-size: 20px; font-weight: 800; }
+  .stats .muted { color: var(--muted); font-size: 12px; }
+  .combo { font-size: 13px; font-weight: 700; color: var(--mid); }
+
+  /* ---------- Feuille du bas ---------- */
+  .sheet {
+    position: fixed; left: 50%; bottom: 16px; transform: translate(-50%, 140%);
+    width: min(440px, calc(100% - 32px)); z-index: 1001; padding: 16px;
+    transition: transform .25s ease; max-height: calc(100% - 120px); overflow-y: auto;
+  }
+  .sheet.open { transform: translate(-50%, 0); }
+  .sheet h2 { margin: 0 0 10px; font-size: 17px; }
+  .row { display: flex; gap: 8px; }
+  input[type=text] {
+    flex: 1; min-width: 0; font-size: 16px; padding: 11px 12px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--chip); color: var(--text); outline: none;
+  }
+  input[type=text]:focus { border-color: var(--accent); }
   .suggest {
-    list-style: none; margin: 6px 0 0; padding: 0; max-height: 200px; overflow-y: auto;
+    list-style: none; margin: 6px 0 0; padding: 0; max-height: 190px; overflow-y: auto;
     border: 1px solid var(--border); border-radius: 10px; display: none;
   }
   .suggest.show { display: block; }
   .suggest li { padding: 9px 12px; cursor: pointer; font-size: 15px; display: flex; justify-content: space-between; gap: 8px; }
-  .suggest li span { color: var(--muted); font-size: 13px; white-space: nowrap; }
-  .suggest li.active, .suggest li:hover { background: var(--bg); }
+  .suggest li span { color: var(--muted); font-size: 13px; text-align: right; }
+  .suggest li.active, .suggest li:hover { background: var(--chip); }
   .msg { min-height: 18px; margin-top: 8px; font-size: 13px; color: var(--bad); }
+  .msg.info { color: var(--muted); }
+  .actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
 
   .result { text-align: center; }
-  .result .km { font-size: 42px; font-weight: 800; line-height: 1.1; margin: 4px 0; }
-  .result .verdict { font-size: 15px; margin-bottom: 4px; }
-  .result .pts { color: var(--muted); font-size: 14px; margin-bottom: 14px; }
-  .actions { display: flex; gap: 8px; justify-content: center; }
+  .result .verdict { font-size: 15px; }
+  .result .km { font-size: 40px; font-weight: 800; line-height: 1.15; margin: 2px 0; }
+  .result .pts { font-size: 18px; font-weight: 700; }
+  .result .detail { color: var(--muted); font-size: 13px; margin: 2px 0 14px; }
+
+  .end { text-align: center; }
+  .end .rank { font-size: 22px; font-weight: 800; margin: 2px 0; }
+  .end .big { font-size: 36px; font-weight: 800; }
+  .end .newrec { color: var(--good); font-weight: 700; }
+  .recap { list-style: none; padding: 0; margin: 12px 0 14px; text-align: left; font-size: 14px; }
+  .recap li { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-top: 1px solid var(--border); }
+  .recap li span:last-child { color: var(--muted); white-space: nowrap; }
 
   .leaflet-container { font-family: inherit; }
-  .city-label {
+  .place-label {
     background: var(--panel); color: var(--text); border: 1px solid var(--border);
     border-radius: 8px; padding: 3px 8px; font-weight: 600; box-shadow: var(--shadow);
   }
-  .city-label::before { display: none; }
+  .place-label::before { display: none; }
+  .dot { width: 22px; height: 22px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.5); }
+  .mystery { width: 26px; height: 26px; border-radius: 50%; background: #ffd23f; border: 3px solid #fff;
+    box-shadow: 0 0 0 0 rgba(255,210,63,.8); animation: pulse 1.4s infinite; }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 16px rgba(255,210,63,0); } 100% { box-shadow: 0 0 0 0 rgba(255,210,63,0); } }
 </style>
 </head>
 <body>
 <div id="map"></div>
 
-<div class="top">
-  <div class="card hint" id="hint">
-    <b>Où est cette ville ?</b>
-    Touche la carte n'importe où, puis tape le nom de la ville que tu crois être à cet endroit.
-  </div>
-  <div class="card stats">
-    <div class="big" id="total">0 pt</div>
-    <div class="muted" id="sub">0 manche</div>
+<!-- Menu principal -->
+<div class="overlay" id="menu">
+  <div class="card menu">
+    <h1>🌍 GéoDéfi</h1>
+    <p class="lead">Devine où sont les villes, les régions et les pays, à vue de satellite.</p>
+    <label class="field"><span>Zone</span><select id="zoneSel"></select></label>
+    <div class="field"><span>À deviner</span><div class="chips" id="catChips"></div></div>
+    <div class="field"><span>Mode de jeu</span><div class="modes" id="modeList"></div></div>
+    <div class="field" id="diffField"><span>Difficulté</span><div class="chips" id="diffChips"></div></div>
+    <div class="field"><span>Carte</span><div class="chips" id="mapChips"></div></div>
+    <div class="record" id="recordLine"></div>
+    <button class="primary" id="startBtn" type="button">Jouer</button>
   </div>
 </div>
 
+<!-- Bandeau de jeu -->
+<div class="hud" id="hud" hidden>
+  <div class="card prompt">
+    <button class="icon" id="menuBtn" type="button" aria-label="Menu">☰</button>
+    <div class="ptext">
+      <div class="plabel" id="pLabel"></div>
+      <div class="pmain" id="pMain"></div>
+    </div>
+    <div class="timer" id="timer" hidden><div id="timerBar"></div></div>
+  </div>
+  <div class="card stats">
+    <div class="big" id="total">0</div>
+    <div class="muted" id="roundInfo"></div>
+    <div class="combo" id="combo"></div>
+  </div>
+</div>
+
+<!-- Feuille du bas -->
 <div class="card sheet" id="sheet">
   <div id="askView">
-    <h2>Quelle ville est ici ?</h2>
-    <p>Tape le nom d'une commune française.</p>
+    <h2 id="askTitle"></h2>
     <form class="row" id="form" autocomplete="off">
-      <input type="text" id="cityInput" placeholder="ex. Clermont-Ferrand" enterkeyhint="go">
+      <input type="text" id="answerInput" enterkeyhint="go" autocapitalize="words" spellcheck="false">
       <button type="submit" id="okBtn">OK</button>
     </form>
     <ul class="suggest" id="suggest"></ul>
     <div class="msg" id="msg"></div>
-    <div class="actions" style="justify-content:flex-start;margin-top:4px">
+    <div class="actions" id="askActions" style="justify-content:flex-start;margin-top:4px">
       <button class="ghost" type="button" id="cancelBtn">Annuler</button>
     </div>
   </div>
@@ -130,8 +210,26 @@
     <div class="verdict" id="verdict"></div>
     <div class="km" id="km"></div>
     <div class="pts" id="pts"></div>
+    <div class="detail" id="detail"></div>
+    <div class="actions"><button type="button" id="nextBtn">Continuer</button></div>
+  </div>
+  <div id="endView" class="end" hidden>
+    <div class="muted">Partie terminée</div>
+    <div class="big" id="endTotal"></div>
+    <div class="rank" id="endRank"></div>
+    <div id="endRecord"></div>
+    <ul class="recap" id="recap"></ul>
     <div class="actions">
-      <button type="button" id="againBtn">Nouvelle manche</button>
+      <button type="button" id="againBtn">Rejouer</button>
+      <button type="button" class="ghost" id="endMenuBtn">Menu</button>
+    </div>
+  </div>
+  <div id="errView" hidden>
+    <h2>Oups…</h2>
+    <p id="errText" style="margin:0 0 14px;color:var(--muted);font-size:14px"></p>
+    <div class="actions">
+      <button type="button" id="retryBtn">Réessayer</button>
+      <button type="button" class="ghost" id="errMenuBtn">Menu</button>
     </div>
   </div>
 </div>
@@ -139,115 +237,678 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 (() => {
-  // Carte de France métropolitaine, sans noms de villes (sinon c'est trop facile)
-  const FRANCE = L.latLngBounds([41.2, -5.3], [51.2, 9.7]);
-  const map = L.map('map', {
-    zoomControl: false, attributionControl: true,
-    maxBounds: FRANCE.pad(0.6), maxBoundsViscosity: 0.8, minZoom: 4, maxZoom: 9
-  });
-  L.control.zoom({ position: 'bottomright' }).addTo(map);
-  const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  // Fond Esri sans noms de lieux, utilisable sans clé même en ouvrant le fichier en local
-  const esri = name => `https://server.arcgisonline.com/ArcGIS/rest/services/${name}/MapServer/tile/{z}/{y}/{x}`;
-  let base = L.tileLayer(esri(dark ? 'Canvas/World_Dark_Gray_Base' : 'Canvas/World_Light_Gray_Base'), {
-    maxNativeZoom: 16, attribution: 'Fond &copy; Esri'
-  }).addTo(map);
-  // Si le fond gris ne charge pas, on bascule sur l'imagerie satellite (sans noms non plus)
-  let switched = false;
-  base.on('tileerror', () => {
-    if (switched) return;
-    switched = true;
-    map.removeLayer(base);
-    base = L.tileLayer(esri('World_Imagery'), { attribution: 'Imagerie &copy; Esri' }).addTo(map);
-  });
-  map.fitBounds(FRANCE);
-  window.addEventListener('resize', () => { if (state === 'idle') map.fitBounds(FRANCE); });
+  'use strict';
 
+  // ================= Services utilisés (gratuits, sans clé) =================
+  const GEO = 'https://geo.api.gouv.fr';                 // communes, départements, régions françaises
+  const PHOTON = 'https://photon.komoot.io';             // recherche de lieux dans le monde (OpenStreetMap)
+  const NOMINATIM = 'https://nominatim.openstreetmap.org';
+  const OVERPASS = 'https://overpass-api.de/api/interpreter';
+  const COUNTRIES_URL = 'https://restcountries.com/v3.1/all?fields=name,translations,capital,capitalInfo,latlng,region,subregion,cca2,population';
+  const ROUNDS = 10;
+
+  // ================= Petits outils =================
   const $ = id => document.getElementById(id);
-  const sheet = $('sheet'), input = $('cityInput'), suggest = $('suggest'), msg = $('msg');
+  const enc = encodeURIComponent;
+  const norm = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[-'’.,\s]+/g, ' ').trim();
+  const rand = a => a[Math.floor(Math.random() * a.length)];
+  const store = {
+    get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* stockage indisponible */ } }
+  };
+  const once = fn => { let p; return () => p || (p = fn().catch(e => { p = null; throw e; })); };
+  const memo = fn => { const c = new Map(); return k => {
+    if (!c.has(k)) c.set(k, fn(k).catch(e => { c.delete(k); throw e; }));
+    return c.get(k);
+  }; };
 
-  const guessIcon = L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 11],
-    html: '<div style="width:22px;height:22px;border-radius:50%;background:#2b59c3;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>' });
-  const cityIcon = L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 11],
-    html: '<div style="width:22px;height:22px;border-radius:50%;background:#c23b3b;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>' });
+  async function fetchJSON(url, opts = {}, ms = 15000) {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), ms);
+    try {
+      const r = await fetch(url, { ...opts, signal: ctl.signal });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return await r.json();
+    } finally { clearTimeout(t); }
+  }
 
-  let state = 'idle';          // idle | asking | result
-  let clicked = null;          // L.LatLng du point posé
+  function haversine(a, b) {
+    const R = 6371, rad = Math.PI / 180;
+    const dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+  // Décale un point au hasard de 0 à maxKm
+  function jitter(p, maxKm) {
+    const d = Math.random() * maxKm, a = Math.random() * 2 * Math.PI;
+    return { lat: p.lat + (d / 111) * Math.cos(a), lng: p.lng + (d / (111 * Math.cos(p.lat * Math.PI / 180))) * Math.sin(a) };
+  }
+
+  // ================= Zones =================
+  const ZONES = {
+    monde:   { label: 'Monde entier', type: 'world', bounds: [[-56, -170], [75, 180]] },
+    europe:  { label: 'Europe', type: 'continent', bounds: [[34, -25], [71, 45]], filter: c => c.region === 'Europe' },
+    afrique: { label: 'Afrique', type: 'continent', bounds: [[-35, -20], [38, 52]], filter: c => c.region === 'Africa' },
+    asie:    { label: 'Asie', type: 'continent', bounds: [[-11, 25], [56, 150]], filter: c => c.region === 'Asia' },
+    amnord:  { label: 'Amérique du Nord et centrale', type: 'continent', bounds: [[7, -170], [72, -52]], filter: c => c.region === 'Americas' && c.sub !== 'South America' },
+    amsud:   { label: 'Amérique du Sud', type: 'continent', bounds: [[-56, -82], [13, -34]], filter: c => c.sub === 'South America' },
+    oceanie: { label: 'Océanie', type: 'continent', bounds: [[-48, 110], [0, 180]], filter: c => c.region === 'Oceania' },
+    fr: { label: 'France', type: 'france', cc: 'FR', bounds: [[41.2, -5.3], [51.2, 9.7]] },
+    be: { label: 'Belgique', cc: 'BE', bounds: [[49.45, 2.5], [51.55, 6.45]] },
+    ch: { label: 'Suisse', cc: 'CH', bounds: [[45.8, 5.9], [47.85, 10.5]] },
+    lu: { label: 'Luxembourg', cc: 'LU', bounds: [[49.4, 5.7], [50.2, 6.55]] },
+    es: { label: 'Espagne', cc: 'ES', bounds: [[35.9, -9.5], [43.9, 4.4]] },
+    pt: { label: 'Portugal', cc: 'PT', bounds: [[36.9, -9.6], [42.2, -6.1]] },
+    it: { label: 'Italie', cc: 'IT', bounds: [[36.6, 6.6], [47.1, 18.6]] },
+    de: { label: 'Allemagne', cc: 'DE', bounds: [[47.2, 5.8], [55.1, 15.1]] },
+    gb: { label: 'Royaume-Uni', cc: 'GB', bounds: [[49.9, -8.2], [58.7, 1.8]] },
+    ie: { label: 'Irlande', cc: 'IE', bounds: [[51.4, -10.5], [55.4, -5.9]] },
+    nl: { label: 'Pays-Bas', cc: 'NL', bounds: [[50.75, 3.3], [53.6, 7.25]] },
+    pl: { label: 'Pologne', cc: 'PL', bounds: [[49, 14.1], [54.9, 24.2]] },
+    gr: { label: 'Grèce', cc: 'GR', bounds: [[34.8, 19.3], [41.8, 28.3]] },
+    ma: { label: 'Maroc', cc: 'MA', bounds: [[27.6, -13.2], [35.95, -1]] },
+    dz: { label: 'Algérie', cc: 'DZ', bounds: [[18.9, -8.7], [37.1, 12]] },
+    tn: { label: 'Tunisie', cc: 'TN', bounds: [[30.2, 7.5], [37.6, 11.6]] },
+    sn: { label: 'Sénégal', cc: 'SN', bounds: [[12.3, -17.6], [16.7, -11.3]] },
+    ci: { label: "Côte d'Ivoire", cc: 'CI', bounds: [[4.3, -8.6], [10.8, -2.5]] },
+    us: { label: 'États-Unis', cc: 'US', bounds: [[24.4, -125], [49.4, -66.9]] },
+    ca: { label: 'Canada', cc: 'CA', bounds: [[41.7, -141], [70, -52.6]] },
+    mx: { label: 'Mexique', cc: 'MX', bounds: [[14.5, -118.4], [32.7, -86.7]] },
+    br: { label: 'Brésil', cc: 'BR', bounds: [[-33.8, -74], [5.3, -34.8]] },
+    ar: { label: 'Argentine', cc: 'AR', bounds: [[-55.1, -73.6], [-21.8, -53.6]] },
+    jp: { label: 'Japon', cc: 'JP', bounds: [[30.9, 129.4], [45.6, 145.9]] },
+    cn: { label: 'Chine', cc: 'CN', bounds: [[18.1, 73.5], [53.6, 134.8]] },
+    in: { label: 'Inde', cc: 'IN', bounds: [[6.7, 68.1], [35.7, 97.4]] },
+    au: { label: 'Australie', cc: 'AU', bounds: [[-43.7, 113.3], [-10.6, 153.7]] },
+  };
+  for (const z of Object.values(ZONES)) {
+    z.type = z.type || 'country';
+    // Échelle de notation : plus la zone est grande, plus on est tolérant
+    const [[s, w], [n, e]] = z.bounds;
+    z.scale = Math.min(600, Math.max(15, haversine({ lat: s, lng: w }, { lat: n, lng: e }) / 25));
+  }
+  const ZONE_GROUPS = [
+    ['Monde', ['monde']],
+    ['Continents', ['europe', 'afrique', 'asie', 'amnord', 'amsud', 'oceanie']],
+    ['Pays', ['fr', 'be', 'ch', 'lu', 'es', 'pt', 'it', 'de', 'gb', 'ie', 'nl', 'pl', 'gr', 'ma', 'dz', 'tn', 'sn', 'ci', 'us', 'ca', 'mx', 'br', 'ar', 'jp', 'cn', 'in', 'au']],
+  ];
+
+  const CATS = {
+    villes:       { label: 'Villes', area: false, where: 'Ville', ask: 'Quelle ville est ici ?', askM: 'Quelle ville est la plus proche du point jaune ?' },
+    departements: { label: 'Départements', area: true, where: 'Département', ask: 'Quel département est ici ?', askM: 'Dans quel département est le point jaune ?', ph: 'ex. Cantal ou 15' },
+    regions:      { label: 'Régions', area: true, where: 'Région', ask: 'Quelle région est ici ?', askM: 'Dans quelle région est le point jaune ?' },
+    pays:         { label: 'Pays', area: true, where: 'Pays', ask: 'Quel pays est ici ?', askM: 'Dans quel pays est le point jaune ?', ph: 'ex. Pérou' },
+    capitales:    { label: 'Capitales', area: false, where: 'Capitale', ask: 'Quelle capitale est la plus proche ?', askM: 'Quelle capitale est la plus proche du point jaune ?', ph: 'ex. Lima' },
+  };
+  const catsFor = z => z.type === 'france' ? ['villes', 'departements', 'regions']
+    : z.type === 'country' ? ['villes', 'regions'] : ['pays', 'capitales', 'villes'];
+
+  const MODES = {
+    ouest:   { label: 'Où est-ce ?', desc: 'Un lieu s’affiche : touche la carte au bon endroit. 10 manches, 15 s chacune.', time: 15 },
+    mystere: { label: 'Point mystère', desc: 'Un point jaune apparaît : tape le nom du lieu. 10 manches, 30 s chacune.', time: 30 },
+    libre:   { label: 'Exploration libre', desc: 'Touche la carte où tu veux, puis devine le lieu. Sans chrono, sans fin.', time: 0 },
+  };
+  const DIFFS = { facile: 'Facile', moyen: 'Moyen', difficile: 'Difficile' };
+
+  // Noms français des capitales quand ils diffèrent de l'anglais
+  const CAP_FR = {
+    'Beijing': 'Pékin', 'Moscow': 'Moscou', 'Warsaw': 'Varsovie', 'London': 'Londres', 'Vienna': 'Vienne',
+    'Lisbon': 'Lisbonne', 'Athens': 'Athènes', 'Copenhagen': 'Copenhague', 'Brussels': 'Bruxelles',
+    'Bucharest': 'Bucarest', 'Kyiv': 'Kiev', 'Algiers': 'Alger', 'Cairo': 'Le Caire', 'Mexico City': 'Mexico',
+    'Washington, D.C.': 'Washington', 'Seoul': 'Séoul', 'Tehran': 'Téhéran', 'Baghdad': 'Bagdad',
+    'Damascus': 'Damas', 'Beirut': 'Beyrouth', 'Jerusalem': 'Jérusalem', 'Riyadh': 'Riyad',
+    'Kuwait City': 'Koweït', 'Havana': 'La Havane', 'Bern': 'Berne', 'Valletta': 'La Valette',
+    'Nicosia': 'Nicosie', 'Yerevan': 'Erevan', 'Baku': 'Bakou', 'Tashkent': 'Tachkent', 'Kabul': 'Kaboul',
+    'Kathmandu': 'Katmandou', 'Singapore': 'Singapour', 'Manila': 'Manille', 'Ulan Bator': 'Oulan-Bator',
+    'Addis Ababa': 'Addis-Abeba', 'Mogadishu': 'Mogadiscio', 'Muscat': 'Mascate', "Sana'a": 'Sanaa',
+    'Tbilisi': 'Tbilissi', 'Chișinău': 'Chisinau', 'Sofia': 'Sofia', 'Tirana': 'Tirana', 'Belgrade': 'Belgrade',
+    'Dushanbe': 'Douchanbé', 'Ashgabat': 'Achgabat', 'Bishkek': 'Bichkek', 'Pyongyang': 'Pyongyang',
+    'Hanoi': 'Hanoï', 'Dhaka': 'Dacca', 'Port Louis': 'Port-Louis', 'Tripoli': 'Tripoli', 'Khartoum': 'Khartoum',
+    'Reykjavik': 'Reykjavik', 'Ljubljana': 'Ljubljana', 'Asunción': 'Asuncion', 'Bogotá': 'Bogota',
+    'City of Victoria': 'Victoria', 'Kingston': 'Kingston', 'Nassau': 'Nassau', 'Panama City': 'Panama',
+    'Guatemala City': 'Guatemala', 'San José': 'San José', 'Brasília': 'Brasilia', 'Yaoundé': 'Yaoundé',
+    "N'Djamena": "N'Djaména", 'Nouakchott': 'Nouakchott', 'Naypyidaw': 'Naypyidaw', 'Canberra': 'Canberra',
+  };
+
+  // ================= Données France (geo.api.gouv.fr) =================
+  const frDeps = once(async () => (await fetchJSON(`${GEO}/departements?fields=nom,code`)).filter(d => !d.code.startsWith('97')));
+  const frRegions = once(async () => (await fetchJSON(`${GEO}/regions?fields=nom,code`)).filter(r => Number(r.code) >= 11));
+  const frCommunes = memo(code => fetchJSON(`${GEO}/departements/${code}/communes?fields=nom,code,centre,population,codeDepartement`)
+    .then(l => l.filter(c => c.centre).sort((a, b) => (b.population || 0) - (a.population || 0))));
+  const frRegionCentres = memo(code => fetchJSON(`${GEO}/communes?codeRegion=${code}&fields=centre`, {}, 30000)
+    .then(l => l.filter(c => c.centre)));
+  const centroid = list => {
+    let lat = 0, lng = 0;
+    list.forEach(c => { lng += c.centre.coordinates[0]; lat += c.centre.coordinates[1]; });
+    return { lat: lat / list.length, lng: lng / list.length };
+  };
+  async function frWhere(ll) {
+    try {
+      const l = await fetchJSON(`${GEO}/communes?lat=${ll.lat}&lon=${ll.lng}&fields=codeDepartement,codeRegion`);
+      return l[0] || null;
+    } catch { return null; }
+  }
+  async function frRandomPoint() {
+    const d = rand(await frDeps());
+    const c = rand(await frCommunes(d.code));
+    return { lat: c.centre.coordinates[1], lng: c.centre.coordinates[0] };
+  }
+  const communePlace = c => ({ name: c.nom, sub: `(${c.codeDepartement})`, key: 'c' + c.code,
+    lat: c.centre.coordinates[1], lng: c.centre.coordinates[0] });
+  const depPlace = d => ({ name: d.nom, sub: `(${d.code})`, code: d.code, area: true, key: 'd' + d.code });
+  const regPlace = r => ({ name: r.nom, sub: '', code: r.code, area: true, key: 'r' + r.code });
+
+  const FRANCE = {
+    villes: {
+      async search(q) {
+        const l = await fetchJSON(`${GEO}/communes?nom=${enc(q)}&fields=nom,code,centre,codeDepartement,population&boost=population&limit=12`);
+        return l.filter(c => c.centre && !c.codeDepartement.startsWith('97')).slice(0, 8).map(communePlace);
+      },
+      async pick(diff, used) {
+        const n = { facile: 1, moyen: 5, difficile: 25 }[diff];
+        const deps = await frDeps();
+        let p;
+        for (let i = 0; i < 20; i++) {
+          p = communePlace(rand((await frCommunes(rand(deps).code)).slice(0, n)));
+          if (!used.has(p.key)) break;
+        }
+        return p;
+      },
+      point: frRandomPoint,
+    },
+    departements: {
+      async search(q) {
+        const t = q.trim();
+        if (/^(\d{1,2}|2[ab])$/i.test(t)) {
+          const code = t.toUpperCase().padStart(2, '0');
+          return (await frDeps()).filter(d => d.code === code).map(depPlace);
+        }
+        const l = await fetchJSON(`${GEO}/departements?nom=${enc(t)}&fields=nom,code`);
+        return l.filter(d => !d.code.startsWith('97')).slice(0, 8).map(depPlace);
+      },
+      async resolve(p) { if (p.lat == null) Object.assign(p, centroid(await frCommunes(p.code))); },
+      async inside(p, ll) { return (await frWhere(ll))?.codeDepartement === p.code; },
+      async pick(diff, used) { return depPlace(rand((await frDeps()).filter(d => !used.has('d' + d.code)))); },
+      point: frRandomPoint,
+      showSub: diff => diff === 'facile',
+    },
+    regions: {
+      async search(q) {
+        const l = await fetchJSON(`${GEO}/regions?nom=${enc(q.trim())}&fields=nom,code`);
+        return l.filter(r => Number(r.code) >= 11).slice(0, 8).map(regPlace);
+      },
+      async resolve(p) { if (p.lat == null) Object.assign(p, centroid(await frRegionCentres(p.code))); },
+      async inside(p, ll) { return (await frWhere(ll))?.codeRegion === p.code; },
+      async pick(diff, used) {
+        let l = (await frRegions()).filter(r => !used.has('r' + r.code));
+        if (!l.length) l = await frRegions();
+        return regPlace(rand(l));
+      },
+      point: frRandomPoint,
+    },
+  };
+
+  // ================= Données monde =================
+  const countries = once(async () => (await fetchJSON(COUNTRIES_URL, {}, 20000))
+    .map(c => ({
+      cc: c.cca2, name: c.translations?.fra?.common || c.name.common, en: c.name.common,
+      region: c.region, sub: c.subregion, pop: c.population || 0,
+      lat: c.latlng?.[0], lng: c.latlng?.[1],
+      capital: c.capital?.[0] || null, capLat: c.capitalInfo?.latlng?.[0], capLng: c.capitalInfo?.latlng?.[1],
+    }))
+    .filter(c => c.lat != null && c.lng != null && c.region !== 'Antarctic'));
+  const countriesIn = async z => (await countries()).filter(c => !z.filter || z.filter(c));
+  const MIN_POP = { facile: 15e6, moyen: 2e6, difficile: 0 };
+  const capName = c => CAP_FR[c.capital] || c.capital;
+
+  // Lieu sous un point (pays + région), via Photon puis Nominatim en secours
+  const reverseInfo = memo(async key => {
+    const [lat, lng] = key.split(',');
+    try {
+      const d = await fetchJSON(`${PHOTON}/reverse?lat=${lat}&lon=${lng}&lang=fr`);
+      const f = d.features?.[0];
+      if (f) return { cc: (f.properties.countrycode || '').toUpperCase(), state: f.properties.state || '' };
+    } catch { /* on tente Nominatim */ }
+    try {
+      const d = await fetchJSON(`${NOMINATIM}/reverse?format=jsonv2&zoom=5&accept-language=fr&lat=${lat}&lon=${lng}`);
+      return { cc: (d.address?.country_code || '').toUpperCase(), state: d.address?.state || '' };
+    } catch { return null; }
+  });
+  const whereIs = ll => reverseInfo(`${ll.lat.toFixed(4)},${ll.lng.toFixed(4)}`);
+
+  async function photon(q, type, zone) {
+    const p = new URLSearchParams({ q, limit: '15', lang: 'fr', layer: type });
+    if (zone.type !== 'world') {
+      const [[s, w], [n, e]] = zone.bounds;
+      p.set('bbox', [w, s, e, n].join(','));
+    }
+    let d;
+    try { d = await fetchJSON(`${PHOTON}/api/?${p}`); }
+    catch { p.delete('layer'); p.delete('lang'); d = await fetchJSON(`${PHOTON}/api/?${p}`); }
+    const seen = new Set();
+    return (d.features || []).map(f => ({
+      name: f.properties.name, type: f.properties.type,
+      cc: (f.properties.countrycode || '').toUpperCase(),
+      state: f.properties.state || '', country: f.properties.country || '',
+      lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1],
+    })).filter(r => {
+      const k = r.name + '|' + r.state + '|' + r.cc;
+      if (!r.name || (r.type && r.type !== type) || seen.has(k)) return false;
+      seen.add(k); return true;
+    });
+  }
+
+  const countryPlace = c => ({ name: c.name, sub: '', cc: c.cc, area: true, key: 'p' + c.cc, lat: c.lat, lng: c.lng });
+  const capitalPlace = c => ({ name: capName(c), sub: `(${c.name})`, key: 'k' + c.cc, lat: c.capLat, lng: c.capLng });
+  const sortMatches = (list, q, names) => {
+    const n = norm(q);
+    return list.map(c => {
+      const ns = names(c).map(norm);
+      const score = ns.some(x => x === n) ? 0 : ns.some(x => x.startsWith(n)) ? 1 : ns.some(x => x.includes(n)) ? 2 : 9;
+      return { c, score };
+    }).filter(x => x.score < 9).sort((a, b) => a.score - b.score || b.c.pop - a.c.pop).slice(0, 8).map(x => x.c);
+  };
+  async function pickCountry(zone, diff, used, prefix, needCapital) {
+    let l = (await countriesIn(zone)).filter(c => !needCapital || (c.capital && c.capLat != null));
+    let pool = l.filter(c => c.pop >= MIN_POP[diff] && !used.has(prefix + c.cc));
+    if (!pool.length) pool = l.filter(c => !used.has(prefix + c.cc));
+    if (!pool.length) pool = l;
+    return rand(pool);
+  }
+
+  const worldProviders = zone => {
+    const capitales = {
+      async search(q) {
+        const l = (await countriesIn(zone)).filter(c => c.capital && c.capLat != null);
+        return sortMatches(l, q, c => [capName(c), c.capital]).map(capitalPlace);
+      },
+      async pick(diff, used) { return capitalPlace(await pickCountry(zone, diff, used, 'k', true)); },
+      async point(diff) {
+        const c = await pickCountry(zone, diff, new Set(), 'k', true);
+        return jitter({ lat: c.capLat, lng: c.capLng }, zone.scale * 0.6);
+      },
+      showSub: diff => diff === 'facile',
+    };
+    return {
+      pays: {
+        async search(q) { return sortMatches(await countriesIn(zone), q, c => [c.name, c.en]).map(countryPlace); },
+        async inside(p, ll) { return (await whereIs(ll))?.cc === p.cc; },
+        async pick(diff, used) { return countryPlace(await pickCountry(zone, diff, used, 'p')); },
+        async point(diff) { const c = await pickCountry(zone, diff, new Set(), 'p'); return { lat: c.lat, lng: c.lng }; },
+      },
+      capitales,
+      villes: {
+        async search(q) {
+          const [res, all] = await Promise.all([photon(q, 'city', zone), countries().catch(() => [])]);
+          const byCc = new Map(all.map(c => [c.cc, c]));
+          return res.filter(r => !zone.filter || !byCc.has(r.cc) || zone.filter(byCc.get(r.cc))).slice(0, 8)
+            .map(r => ({ name: r.name, sub: [r.state, r.country].filter(Boolean).join(', '), lat: r.lat, lng: r.lng }));
+        },
+        // En défi, les villes du monde sont tirées parmi les capitales
+        pick: capitales.pick, point: capitales.point, showSub: capitales.showSub,
+      },
+    };
+  };
+
+  // ================= Autres pays (Photon + Overpass) =================
+  const overpass = q => fetchJSON(OVERPASS, {
+    method: 'POST', body: 'data=' + enc(q),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  }, 60000);
+  const ovCities = memo(async cc => {
+    const q = t => `[out:json][timeout:60];area["ISO3166-1"="${cc}"][admin_level=2]->.a;node["place"="${t}"](area.a);out;`;
+    let els = (await overpass(q('city'))).elements || [];
+    if (els.length < 30) els = els.concat((await overpass(q('town'))).elements || []);
+    return els.filter(e => e.tags?.name && e.lat != null).map(e => ({
+      name: e.tags['name:fr'] || e.tags.name, key: 'o' + e.id, lat: e.lat, lng: e.lon,
+      pop: parseInt(String(e.tags.population || '0').replace(/\D/g, ''), 10) || 0, sub: '',
+    })).sort((a, b) => b.pop - a.pop);
+  });
+  const ovRegions = memo(async cc => {
+    const q = `[out:json][timeout:60];area["ISO3166-1"="${cc}"][admin_level=2]->.a;rel["boundary"="administrative"]["admin_level"="4"](area.a);out center tags;`;
+    return ((await overpass(q)).elements || [])
+      .filter(e => e.tags?.name && e.center && (!e.tags['ISO3166-2'] || e.tags['ISO3166-2'].startsWith(cc + '-')))
+      .map(e => ({
+        name: e.tags['name:fr'] || e.tags.name, sub: '', area: true, key: 'o' + e.id,
+        names: [e.tags.name, e.tags['name:fr'], e.tags['name:en']].filter(Boolean),
+        lat: e.center.lat, lng: e.center.lon,
+      }));
+  });
+  const countryProviders = zone => {
+    const pickCity = async (diff, used) => {
+      const n = { facile: 12, moyen: 50, difficile: 250 }[diff];
+      const l = (await ovCities(zone.cc)).slice(0, n);
+      if (!l.length) throw new Error('aucune ville');
+      return rand(l.filter(c => !used.has(c.key))) || rand(l);
+    };
+    return {
+      villes: {
+        async search(q) {
+          return (await photon(q, 'city', zone)).filter(r => r.cc === zone.cc).slice(0, 8)
+            .map(r => ({ name: r.name, sub: r.state, lat: r.lat, lng: r.lng }));
+        },
+        pick: pickCity,
+        async point(diff) { return jitter(await pickCity(diff, new Set()), zone.scale * 0.5); },
+      },
+      regions: {
+        async search(q) {
+          return (await photon(q, 'state', zone)).filter(r => r.cc === zone.cc).slice(0, 8)
+            .map(r => ({ name: r.name, sub: '', area: true, names: [r.name], lat: r.lat, lng: r.lng }));
+        },
+        async inside(p, ll) {
+          const st = norm((await whereIs(ll))?.state);
+          return !!st && (p.names || [p.name]).some(n => norm(n) === st);
+        },
+        async pick(diff, used) {
+          const l = await ovRegions(zone.cc);
+          if (!l.length) throw new Error('aucune région');
+          return rand(l.filter(r => !used.has(r.key))) || rand(l);
+        },
+        async point(diff) { return pickCity('difficile', new Set()); },
+      },
+    };
+  };
+
+  function getProvider(zoneKey, cat) {
+    const z = ZONES[zoneKey];
+    if (z.type === 'france') return FRANCE[cat];
+    if (z.type === 'country') return countryProviders(z)[cat];
+    return worldProviders(z)[cat];
+  }
+
+  // ================= Carte =================
+  const map = L.map('map', { zoomControl: false, zoomSnap: 0.25, minZoom: 1, maxZoom: 13, worldCopyJump: true });
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+  const esri = name => `https://server.arcgisonline.com/ArcGIS/rest/services/${name}/MapServer/tile/{z}/{y}/{x}`;
+  const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const BASES = {
+    sat: () => L.tileLayer(esri('World_Imagery'), { maxNativeZoom: 18, attribution: 'Imagerie &copy; Esri' }),
+    plan: () => L.tileLayer(esri(dark ? 'Canvas/World_Dark_Gray_Base' : 'Canvas/World_Light_Gray_Base'),
+      { maxNativeZoom: 16, attribution: 'Fond &copy; Esri' }),
+  };
+  let baseLayer = null;
+  function setBase(k) {
+    if (baseLayer) map.removeLayer(baseLayer);
+    baseLayer = BASES[k]().addTo(map);
+  }
+
+  function fitZone(animate) {
+    const z = ZONES[S.zone];
+    const b = L.latLngBounds(z.bounds);
+    map.setMaxBounds(null);
+    map.setMinZoom(1);
+    if (animate) map.flyToBounds(b, { duration: .6, paddingTopLeft: [0, 60] });
+    else map.fitBounds(b, { animate: false, paddingTopLeft: [0, 60] });
+    const zoom = map.getBoundsZoom(b);
+    map.setMinZoom(Math.max(1, Math.floor(zoom) - 1));
+    map.setMaxBounds(z.type === 'world' ? null : b.pad(0.6));
+  }
+
+  const dotIcon = (color) => L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 11],
+    html: `<div class="dot" style="background:${color}"></div>` });
+  const ICONS = {
+    guess: dotIcon('#2b59c3'), target: dotIcon('#e03a3a'),
+    mystery: L.divIcon({ className: '', iconSize: [26, 26], iconAnchor: [13, 13], html: '<div class="mystery"></div>' }),
+  };
   let layers = [];
-  let rounds = [];
-  let results = [];            // suggestions courantes
-  let active = -1;
+  const addLayer = l => { layers.push(l.addTo(map)); return l; };
+  const clearLayers = () => { layers.forEach(l => map.removeLayer(l)); layers = []; };
+  const labelled = (ll, icon, text) => addLayer(L.marker(ll, { icon }))
+    .bindTooltip(text, { permanent: true, direction: 'top', offset: [0, -12], className: 'place-label' });
 
-  // ---------- Carte ----------
-  map.on('click', e => {
-    if (state === 'result') return;
-    clearLayers();
-    clicked = e.latlng;
-    layers.push(L.marker(clicked, { icon: guessIcon }).addTo(map));
-    openAsk();
+  // ================= État de la partie =================
+  const saved = store.get('geodefi-settings') || {};
+  const S = {
+    zone: ZONES[saved.zone] ? saved.zone : 'fr',
+    cat: saved.cat || 'villes',
+    mode: MODES[saved.mode] ? saved.mode : 'ouest',
+    diff: DIFFS[saved.diff] ? saved.diff : 'moyen',
+    base: saved.base === 'plan' ? 'plan' : 'sat',
+    state: 'menu', total: 0, round: 0, combo: 0, history: [], used: new Set(),
+    target: null, guess: null, mystery: null, timerId: null, timeLeft: 0, timeTotal: 1,
+  };
+  if (!catsFor(ZONES[S.zone]).includes(S.cat)) S.cat = catsFor(ZONES[S.zone])[0];
+  let prov = null;
+  setBase(S.base);
+  fitZone(false);
+
+  // ================= Menu =================
+  const zoneSel = $('zoneSel');
+  for (const [group, keys] of ZONE_GROUPS) {
+    const og = document.createElement('optgroup');
+    og.label = group;
+    keys.forEach(k => { const o = new Option(ZONES[k].label, k); og.appendChild(o); });
+    zoneSel.appendChild(og);
+  }
+  zoneSel.value = S.zone;
+  zoneSel.onchange = () => {
+    S.zone = zoneSel.value;
+    if (!catsFor(ZONES[S.zone]).includes(S.cat)) S.cat = catsFor(ZONES[S.zone])[0];
+    fitZone(true);
+    renderMenu();
+  };
+
+  function chips(el, items, current, onPick) {
+    el.innerHTML = '';
+    for (const [k, label] of items) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'chip' + (k === current ? ' on' : ''); b.textContent = label;
+      b.onclick = () => { onPick(k); renderMenu(); };
+      el.appendChild(b);
+    }
+  }
+  const recordKey = () => `geodefi-rec:${S.mode}:${S.zone}:${S.cat}:${S.diff}`;
+
+  function renderMenu() {
+    chips($('catChips'), catsFor(ZONES[S.zone]).map(k => [k, CATS[k].label]), S.cat, k => S.cat = k);
+    chips($('diffChips'), Object.entries(DIFFS), S.diff, k => S.diff = k);
+    chips($('mapChips'), [['sat', '🛰️ Satellite'], ['plan', '🗺️ Plan']], S.base, k => { S.base = k; setBase(k); });
+    const ml = $('modeList'); ml.innerHTML = '';
+    for (const [k, m] of Object.entries(MODES)) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'mode' + (k === S.mode ? ' on' : '');
+      b.innerHTML = '<b></b><small></small>';
+      b.firstChild.textContent = m.label; b.lastChild.textContent = m.desc;
+      b.onclick = () => { S.mode = k; renderMenu(); };
+      ml.appendChild(b);
+    }
+    $('diffField').hidden = S.mode === 'libre';
+    const rec = S.mode === 'libre' ? null : store.get(recordKey());
+    $('recordLine').textContent = rec ? `🏆 Ton record ici : ${fmtInt(rec)} points` : '';
+    store.set('geodefi-settings', { zone: S.zone, cat: S.cat, mode: S.mode, diff: S.diff, base: S.base });
+  }
+
+  function openMenu() {
+    stopTimer();
+    S.state = 'menu';
+    clearLayers(); closeSheet();
+    $('hud').hidden = true; $('menu').hidden = false;
+    fitZone(true);
+    renderMenu();
+  }
+  $('menuBtn').onclick = openMenu;
+  $('endMenuBtn').onclick = openMenu;
+  $('errMenuBtn').onclick = openMenu;
+
+  $('startBtn').onclick = startGame;
+  $('againBtn').onclick = startGame;
+
+  function startGame() {
+    prov = getProvider(S.zone, S.cat);
+    Object.assign(S, { total: 0, round: 0, combo: 0, history: [], used: new Set(), target: null, guess: null, mystery: null });
+    $('menu').hidden = true; $('hud').hidden = false;
+    updateStats();
+    nextRound();
+  }
+
+  // ================= Déroulement =================
+  const fmtInt = n => Math.round(n).toLocaleString('fr-FR');
+  const fmtKm = km => (km < 10 ? km.toFixed(1).replace('.', ',') : fmtInt(km)) + ' km';
+  const zoneLabel = () => `${CATS[S.cat].where} · ${ZONES[S.zone].label}`;
+  function setPrompt(label, main) { $('pLabel').textContent = label; $('pMain').textContent = main; }
+
+  function updateStats() {
+    $('total').textContent = fmtInt(S.total) + ' pts';
+    $('roundInfo').textContent = S.mode === 'libre'
+      ? (S.history.length ? `${S.history.length} essai${S.history.length > 1 ? 's' : ''}` : 'Exploration')
+      : `Manche ${Math.min(Math.max(S.round, 1), ROUNDS)}/${ROUNDS}`;
+    $('combo').textContent = S.combo >= 2 ? `🔥 Série de ${S.combo}` : '';
+  }
+
+  async function nextRound() {
+    clearLayers(); closeSheet(); stopTimer();
+    S.target = null; S.guess = null; S.mystery = null;
+    if (S.mode !== 'libre' && S.round >= ROUNDS) return showEnd();
+    S.round++;
+    updateStats();
+    fitZone(true);
+
+    if (S.mode === 'libre') {
+      S.state = 'await-click';
+      setPrompt(zoneLabel(), 'Touche la carte n’importe où');
+      return;
+    }
+
+    S.state = 'loading';
+    setPrompt(`Manche ${S.round}/${ROUNDS}`, 'Préparation…');
+    try {
+      if (S.mode === 'ouest') {
+        const t = await prov.pick(S.diff, S.used);
+        if (prov.resolve) await prov.resolve(t);
+        if (S.state !== 'loading') return;
+        S.used.add(t.key); S.target = t;
+        const sub = prov.showSub ? prov.showSub(S.diff) : S.diff !== 'difficile';
+        setPrompt(`${CATS[S.cat].where} · manche ${S.round}/${ROUNDS} · touche la carte`, t.name + (sub && t.sub ? ' ' + t.sub : ''));
+        S.state = 'await-click';
+        startTimer(MODES.ouest.time, onTimeout);
+      } else {
+        const p = await prov.point(S.diff);
+        if (S.state !== 'loading') return;
+        S.mystery = L.latLng(p.lat, p.lng);
+        addLayer(L.marker(S.mystery, { icon: ICONS.mystery, interactive: false }));
+        setPrompt(`Point mystère · manche ${S.round}/${ROUNDS}`, CATS[S.cat].askM);
+        openAsk(CATS[S.cat].askM);
+        startTimer(MODES.mystere.time, onTimeout);
+      }
+    } catch (e) {
+      if (S.state !== 'loading') return;
+      S.round--;
+      S.state = 'error';
+      setPrompt('Connexion', 'Problème de chargement');
+      $('errText').textContent = 'Impossible de charger les lieux (le service est peut-être occupé). Vérifie ta connexion et réessaie.';
+      showView('errView');
+    }
+  }
+  $('retryBtn').onclick = () => nextRound();
+
+  map.on('click', async e => {
+    const ll = e.latlng.wrap();
+    if (S.state !== 'await-click') return;
+    if (S.mode === 'libre') {
+      clearLayers();
+      S.guess = ll;
+      addLayer(L.marker(ll, { icon: ICONS.guess }));
+      openAsk(CATS[S.cat].ask);
+    } else if (S.mode === 'ouest') {
+      S.state = 'computing';
+      stopTimer();
+      const frac = S.timeLeft / S.timeTotal;
+      addLayer(L.marker(ll, { icon: ICONS.guess }));
+      setPrompt(S.target.name, 'Calcul…');
+      const km = await distanceTo(S.target, ll);
+      finishRound({ from: ll, place: S.target, km, frac });
+    }
   });
 
-  function clearLayers() { layers.forEach(l => map.removeLayer(l)); layers = []; }
+  async function distanceTo(place, ll) {
+    if (place.area && prov.inside) {
+      try { if (await prov.inside(place, ll)) return 0; } catch { /* on retombe sur la distance au centre */ }
+    }
+    return haversine(ll, place);
+  }
 
-  // ---------- Saisie ----------
-  function openAsk() {
-    state = 'asking';
-    $('askView').hidden = false; $('resultView').hidden = true;
-    input.value = ''; msg.textContent = ''; hideSuggest();
+  function onTimeout() {
+    if (S.state === 'await-click' && S.mode === 'ouest') {
+      S.state = 'computing';
+      finishRound({ place: S.target, timeout: true });
+    } else if (S.state === 'asking' && S.mode === 'mystere') {
+      S.state = 'computing';
+      hideSuggest(); $('answerInput').blur();
+      finishRound({ from: S.mystery, timeout: true });
+    }
+  }
+
+  // ---------- Chrono ----------
+  function startTimer(sec, onEnd) {
+    stopTimer();
+    const t0 = performance.now();
+    S.timeTotal = sec * 1000; S.timeLeft = S.timeTotal;
+    const bar = $('timerBar');
+    bar.style.width = '100%'; bar.classList.remove('low');
+    $('timer').hidden = false;
+    S.timerId = setInterval(() => {
+      S.timeLeft = Math.max(0, S.timeTotal - (performance.now() - t0));
+      bar.style.width = (S.timeLeft / S.timeTotal * 100) + '%';
+      bar.classList.toggle('low', S.timeLeft < 5000);
+      if (S.timeLeft <= 0) { stopTimer(); onEnd(); }
+    }, 100);
+  }
+  function stopTimer() { clearInterval(S.timerId); S.timerId = null; $('timer').hidden = true; }
+
+  // ---------- Feuille du bas ----------
+  const sheet = $('sheet'), input = $('answerInput'), suggest = $('suggest'), msg = $('msg');
+  function showView(id) {
+    ['askView', 'resultView', 'endView', 'errView'].forEach(v => $(v).hidden = v !== id);
     sheet.classList.add('open');
-    setTimeout(() => input.focus(), 50);
   }
+  function closeSheet() { sheet.classList.remove('open'); input.blur(); hideSuggest(); }
 
-  function reset() {
-    state = 'idle'; clicked = null; clearLayers();
-    sheet.classList.remove('open'); input.blur();
-    map.flyToBounds(FRANCE, { duration: .6 });
+  function openAsk(title) {
+    S.state = 'asking';
+    $('askTitle').textContent = title;
+    const z = ZONES[S.zone];
+    input.placeholder = CATS[S.cat].ph || (S.cat === 'villes' ? (z.type === 'france' ? 'ex. Clermont-Ferrand' : 'Nom d’une ville') : 'Nom d’une région');
+    input.value = ''; input.disabled = false; $('okBtn').disabled = false;
+    setMsg('');
+    hideSuggest();
+    $('askActions').hidden = S.mode !== 'libre';
+    showView('askView');
+    setTimeout(() => input.focus(), 60);
   }
-  $('cancelBtn').onclick = reset;
-  $('againBtn').onclick = reset;
+  $('cancelBtn').onclick = () => { clearLayers(); closeSheet(); S.state = 'await-click'; S.round--; nextRound(); };
+  function setMsg(t, info) { msg.textContent = t; msg.classList.toggle('info', !!info); }
 
-  // Recherche de communes via l'API officielle geo.api.gouv.fr
-  async function searchCommunes(q) {
-    const url = 'https://geo.api.gouv.fr/communes?nom=' + encodeURIComponent(q) +
-      '&fields=nom,centre,codeDepartement,population&boost=population&limit=8';
-    const r = await fetch(url);
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return (await r.json()).filter(c => c.centre);
-  }
-
-  let debounce, reqId = 0;
+  // Suggestions pendant la saisie
+  let results = [], active = -1, debounce, reqId = 0;
   input.addEventListener('input', () => {
     clearTimeout(debounce);
-    msg.textContent = '';
+    setMsg('');
     const q = input.value.trim();
-    if (q.length < 2) { hideSuggest(); return; }
+    if (q.length < 2 && !/^\d$/.test(q)) { reqId++; hideSuggest(); return; }
     debounce = setTimeout(async () => {
       const id = ++reqId;
       try {
-        const list = await searchCommunes(q);
-        if (id === reqId) showSuggest(list);
+        const list = await prov.search(q);
+        if (id === reqId && S.state === 'asking') showSuggest(list);
       } catch { /* l'erreur sera affichée à la validation */ }
-    }, 200);
+    }, 220);
   });
-
   input.addEventListener('keydown', e => {
     if (!suggest.classList.contains('show')) return;
     if (e.key === 'ArrowDown') { e.preventDefault(); setActive(Math.min(active + 1, results.length - 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(Math.max(active - 1, 0)); }
     else if (e.key === 'Escape') hideSuggest();
   });
-
   function showSuggest(list) {
     results = list; active = -1;
     suggest.innerHTML = '';
-    list.forEach((c, i) => {
+    list.forEach(p => {
       const li = document.createElement('li');
-      li.innerHTML = `<div></div><span></span>`;
-      li.firstChild.textContent = c.nom;
-      li.lastChild.textContent = `(${c.codeDepartement})`;
-      li.addEventListener('mousedown', ev => { ev.preventDefault(); answer(c); });
+      li.innerHTML = '<div></div><span></span>';
+      li.firstChild.textContent = p.name;
+      li.lastChild.textContent = p.sub || '';
+      li.addEventListener('mousedown', ev => { ev.preventDefault(); answer(p); });
       suggest.appendChild(li);
-      if (i === active) li.classList.add('active');
     });
     suggest.classList.toggle('show', list.length > 0);
   }
@@ -260,70 +921,134 @@
 
   $('form').addEventListener('submit', async e => {
     e.preventDefault();
+    if (S.state !== 'asking') return;
     if (active >= 0 && results[active]) return answer(results[active]);
     const q = input.value.trim();
     if (!q) return;
     $('okBtn').disabled = true;
     try {
-      const list = await searchCommunes(q);
-      if (!list.length) { msg.textContent = `Aucune commune trouvée pour « ${q} ».`; return; }
-      // On privilégie le nom exact, sinon la commune la plus peuplée
-      const norm = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[-'’\s]+/g, ' ').trim();
-      answer(list.find(c => norm(c.nom) === norm(q)) || list[0]);
+      const list = await prov.search(q);
+      if (S.state !== 'asking') return;
+      if (!list.length) { setMsg(`Aucun lieu trouvé pour « ${q} ».`); return; }
+      answer(list.find(p => norm(p.name) === norm(q)) || list[0]);
     } catch {
-      msg.textContent = 'Impossible de contacter le service de recherche. Vérifie ta connexion.';
+      setMsg('Impossible de contacter le service de recherche. Vérifie ta connexion.');
     } finally {
       $('okBtn').disabled = false;
     }
   });
 
-  // ---------- Résultat ----------
-  function haversine(a, b) {
-    const R = 6371, rad = Math.PI / 180;
-    const dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad;
-    const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
-    return 2 * R * Math.asin(Math.sqrt(h));
+  async function answer(place) {
+    if (S.state !== 'asking') return;
+    S.state = 'computing';
+    const frac = S.mode === 'mystere' ? S.timeLeft / S.timeTotal : 0;
+    stopTimer();
+    hideSuggest(); input.blur(); input.disabled = true;
+    setMsg('Calcul de la distance…', true);
+    const from = S.mode === 'libre' ? S.guess : S.mystery;
+    try {
+      if (prov.resolve) await prov.resolve(place);
+      const km = await distanceTo(place, from);
+      finishRound({ from, place, km, frac });
+    } catch {
+      input.disabled = false;
+      S.state = 'asking';
+      setMsg('Impossible de localiser ce lieu. Réessaie.');
+    }
   }
 
-  function answer(c) {
-    if (state !== 'asking') return;
-    state = 'result';
-    hideSuggest(); input.blur();
-    const [lng, lat] = c.centre.coordinates;
-    const city = L.latLng(lat, lng);
-    const km = haversine(clicked, city);
-    const points = Math.round(5000 * Math.exp(-km / 100));   // 5000 pts à 0 km, ~1840 à 100 km
-    rounds.push({ nom: c.nom, km, points });
+  // ---------- Score ----------
+  function score(km, area, frac) {
+    const scale = ZONES[S.zone].scale * (area ? 2 : 1);
+    const base = km == null ? 0 : Math.round(1000 * Math.exp(-km / scale));
+    const bonus = S.mode === 'libre' ? 0 : Math.round(base * 0.3 * (frac || 0));
+    S.combo = base >= 700 ? S.combo + 1 : 0;
+    const mult = S.combo >= 2 ? Math.min(1 + 0.25 * (S.combo - 1), 2) : 1;
+    return { base, bonus, mult, pts: Math.round((base + bonus) * mult) };
+  }
+  const VERDICTS = [
+    [950, 'Dans le mille ! 🎯', 'good'], [800, 'Excellent !', 'good'], [600, 'Très bien', 'good'],
+    [350, 'Pas mal', 'mid'], [150, 'Bof…', 'mid'], [0, 'Loin, très loin…', 'bad'],
+  ];
 
-    layers.push(L.marker(city, { icon: cityIcon }).addTo(map)
-      .bindTooltip(`${c.nom} (${c.codeDepartement})`, { permanent: true, direction: 'top', offset: [0, -12], className: 'city-label' }));
-    layers.push(L.polyline([clicked, city], { color: '#c23b3b', weight: 3, dashArray: '6 8' }).addTo(map));
-    map.flyToBounds(L.latLngBounds([clicked, city]).pad(0.5), { maxZoom: 8, duration: .8,
-      paddingBottomRight: [0, 180] });
-
-    const v = $('verdict');
-    let color, text;
-    if (km < 10) { color = 'var(--good)'; text = 'Dans le mille ! 🎯'; }
-    else if (km < 50) { color = 'var(--good)'; text = 'Excellent !'; }
-    else if (km < 150) { color = 'var(--mid)'; text = 'Pas mal du tout'; }
-    else if (km < 350) { color = 'var(--mid)'; text = 'Bof…'; }
-    else { color = 'var(--bad)'; text = 'Loin, très loin…'; }
-    v.textContent = `${c.nom} — ${text}`;
-    const kmEl = $('km');
-    kmEl.textContent = (km < 10 ? km.toFixed(1) : Math.round(km)).toString().replace('.', ',') + ' km';
-    kmEl.style.color = color;
-    $('pts').textContent = `+${points.toLocaleString('fr-FR')} points`;
-    $('askView').hidden = true; $('resultView').hidden = false;
+  function finishRound({ from, place, km, frac, timeout }) {
+    const area = CATS[S.cat].area;
+    if (timeout) km = null;
+    const sc = score(km, area, frac);
+    S.total += sc.pts;
+    S.history.push({ name: place ? place.name : '—', km, pts: sc.pts });
     updateStats();
+
+    // Dessin sur la carte
+    const pts = [];
+    if (from) pts.push(from);
+    if (place && place.lat != null) {
+      labelled(L.latLng(place.lat, place.lng), ICONS.target, place.name + (place.sub ? ' ' + place.sub : ''));
+      pts.push(L.latLng(place.lat, place.lng));
+      if (from && km > 0) addLayer(L.polyline([from, [place.lat, place.lng]], { color: '#ffd23f', weight: 3, dashArray: '6 8' }));
+    }
+    if (pts.length > 1) map.flyToBounds(L.latLngBounds(pts).pad(0.4), { maxZoom: 9, duration: .8, paddingTopLeft: [0, 90], paddingBottomRight: [0, 230] });
+    else if (pts.length === 1) map.flyTo(pts[0], Math.max(map.getZoom(), 5), { duration: .8 });
+
+    // Texte du résultat
+    const v = VERDICTS.find(x => sc.base >= x[0]);
+    const kmEl = $('km');
+    if (timeout) {
+      $('verdict').textContent = '⏱️ Temps écoulé !';
+      kmEl.textContent = place ? place.name : '—';
+      kmEl.style.color = 'var(--bad)';
+    } else {
+      $('verdict').textContent = (S.mode === 'ouest' ? place.name : 'Ta réponse : ' + place.name) + ' — ' + v[1];
+      kmEl.textContent = km === 0 && area ? 'En plein dedans !' : fmtKm(km);
+      kmEl.style.color = `var(--${v[2]})`;
+    }
+    $('pts').textContent = `+${fmtInt(sc.pts)} points`;
+    const parts = [`précision ${fmtInt(sc.base)}`];
+    if (sc.bonus) parts.push(`rapidité +${fmtInt(sc.bonus)}`);
+    if (sc.mult > 1) parts.push(`série ×${String(sc.mult).replace('.', ',')}`);
+    $('detail').textContent = parts.join(' · ');
+    setPrompt(zoneLabel(), timeout ? 'Temps écoulé' : place.name);
+    $('nextBtn').textContent = S.mode === 'libre' ? 'Continuer' : S.round >= ROUNDS ? 'Voir le score final' : 'Manche suivante';
+    S.state = 'result';
+    showView('resultView');
+  }
+  $('nextBtn').onclick = () => nextRound();
+
+  // ---------- Fin de partie ----------
+  const RANKS = [
+    [1600, 'GPS humain 🛰️'], [1100, 'Cartographe 🗺️'], [800, 'Géographe 🧭'],
+    [500, 'Randonneur 🥾'], [250, 'Promeneur du dimanche 🚶'], [0, 'Touriste égaré 🧳'],
+  ];
+  function showEnd() {
+    S.state = 'end';
+    stopTimer(); clearLayers(); fitZone(true);
+    const avg = S.total / ROUNDS;
+    $('endTotal').textContent = fmtInt(S.total) + ' pts';
+    $('endRank').textContent = RANKS.find(r => avg >= r[0])[1];
+    const key = recordKey(), rec = store.get(key);
+    const er = $('endRecord');
+    if (!rec || S.total > rec) {
+      store.set(key, S.total);
+      er.className = 'newrec';
+      er.textContent = rec ? `🏆 Nouveau record ! (avant : ${fmtInt(rec)})` : '🏆 Premier record enregistré !';
+    } else {
+      er.className = 'muted';
+      er.textContent = `Record : ${fmtInt(rec)} pts`;
+    }
+    const ul = $('recap'); ul.innerHTML = '';
+    S.history.forEach((h, i) => {
+      const li = document.createElement('li');
+      li.innerHTML = '<span></span><span></span>';
+      li.firstChild.textContent = `${i + 1}. ${h.name}`;
+      li.lastChild.textContent = `${h.km == null ? '⏱️' : fmtKm(h.km)} · ${fmtInt(h.pts)} pts`;
+      ul.appendChild(li);
+    });
+    setPrompt(zoneLabel(), 'Partie terminée');
+    showView('endView');
   }
 
-  function updateStats() {
-    const total = rounds.reduce((s, r) => s + r.points, 0);
-    const avg = rounds.reduce((s, r) => s + r.km, 0) / rounds.length;
-    $('total').textContent = total.toLocaleString('fr-FR') + ' pt' + (total > 1 ? 's' : '');
-    $('sub').textContent = `${rounds.length} manche${rounds.length > 1 ? 's' : ''} · moy. ${Math.round(avg)} km`;
-    $('hint').style.display = 'none';
-  }
+  window.addEventListener('resize', () => { if (S.state === 'menu') fitZone(false); });
+  renderMenu();
 })();
 </script>
 </body>
