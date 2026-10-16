@@ -147,10 +147,19 @@
   });
   L.control.zoom({ position: 'bottomright' }).addTo(map);
   const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark ? 'dark' : 'light'}_nolabels/{z}/{x}/{y}{r}.png`, {
-    subdomains: 'abcd',
-    attribution: '&copy; OpenStreetMap &copy; CARTO'
+  // Fond Esri sans noms de lieux, utilisable sans clé même en ouvrant le fichier en local
+  const esri = name => `https://server.arcgisonline.com/ArcGIS/rest/services/${name}/MapServer/tile/{z}/{y}/{x}`;
+  let base = L.tileLayer(esri(dark ? 'Canvas/World_Dark_Gray_Base' : 'Canvas/World_Light_Gray_Base'), {
+    maxNativeZoom: 16, attribution: 'Fond &copy; Esri'
   }).addTo(map);
+  // Si le fond gris ne charge pas, on bascule sur l'imagerie satellite (sans noms non plus)
+  let switched = false;
+  base.on('tileerror', () => {
+    if (switched) return;
+    switched = true;
+    map.removeLayer(base);
+    base = L.tileLayer(esri('World_Imagery'), { attribution: 'Imagerie &copy; Esri' }).addTo(map);
+  });
   map.fitBounds(FRANCE);
   window.addEventListener('resize', () => { if (state === 'idle') map.fitBounds(FRANCE); });
 
