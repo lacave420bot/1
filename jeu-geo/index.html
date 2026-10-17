@@ -243,8 +243,6 @@
   const GEO = 'https://geo.api.gouv.fr';                 // communes, départements, régions françaises
   const PHOTON = 'https://photon.komoot.io';             // recherche de lieux dans le monde (OpenStreetMap)
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
-  const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter',
-    'https://overpass.private.coffee/api/interpreter'];
   const ROUNDS = 10;
 
   // ================= Petits outils =================
@@ -684,11 +682,11 @@ TV|Tuvalu|OC|0.011|-8.52|179.2|Funafuti|-8.521|179.198|`;
     try {
       const d = await fetchJSON(`${PHOTON}/reverse?lat=${lat}&lon=${lng}&lang=fr`);
       const f = d.features?.[0];
-      if (f) return { cc: (f.properties.countrycode || '').toUpperCase(), state: f.properties.state || '' };
+      if (f) return { cc: (f.properties.countrycode || '').toUpperCase(), state: f.properties.state || '', county: f.properties.county || '' };
     } catch { /* on tente Nominatim */ }
     try {
       const d = await fetchJSON(`${NOMINATIM}/reverse?format=jsonv2&zoom=5&accept-language=fr&lat=${lat}&lon=${lng}`);
-      return { cc: (d.address?.country_code || '').toUpperCase(), state: d.address?.state || '' };
+      return { cc: (d.address?.country_code || '').toUpperCase(), state: d.address?.state || '', county: d.address?.county || '' };
     } catch { return null; }
   });
   const whereIs = ll => reverseInfo(`${ll.lat.toFixed(4)},${ll.lng.toFixed(4)}`);
@@ -769,18 +767,43 @@ TV|Tuvalu|OC|0.011|-8.52|179.2|Funafuti|-8.521|179.198|`;
     };
   };
 
-  // ================= Autres pays (Photon + Overpass) =================
-  async function overpass(q) {
-    let err;
-    for (const url of OVERPASS) {
-      try {
-        return await fetchJSON(url, {
-          method: 'POST', body: 'data=' + enc(q),
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        }, 30000);
-      } catch (e) { err = e; }
-    }
-    throw err;
+  // ================= Autres pays =================
+  // Régions (cantons, Länder, États, provinces…) des pays du menu : nom/autres noms,lat,lng d'un point à l'intérieur
+  const REGION_DATA = {
+    BE: 'Anvers/Antwerpen,51.2,4.65;Limbourg/Limburg,50.98,5.45;Flandre-Orientale/Oost-Vlaanderen,51.0,3.8;Flandre-Occidentale/West-Vlaanderen,51.0,3.0;Brabant flamand/Vlaams-Brabant,50.88,4.6;Brabant wallon,50.67,4.6;Hainaut,50.5,3.9;Namur,50.3,4.85;Liège,50.5,5.75;Luxembourg,49.95,5.5;Bruxelles-Capitale/Bruxelles,50.84,4.37',
+    CH: 'Zurich,47.41,8.65;Berne/Bern,46.82,7.63;Lucerne/Luzern,47.07,8.1;Uri,46.77,8.63;Schwytz/Schwyz,47.06,8.75;Obwald/Obwalden,46.85,8.25;Nidwald/Nidwalden,46.93,8.4;Glaris/Glarus,46.98,9.07;Zoug/Zug,47.16,8.53;Fribourg,46.7,7.1;Soleure/Solothurn,47.25,7.6;Bâle-Ville/Basel-Stadt,47.56,7.6;Bâle-Campagne/Basel-Landschaft,47.45,7.7;Schaffhouse/Schaffhausen,47.7,8.6;Appenzell Rhodes-Extérieures/Appenzell Ausserrhoden,47.37,9.3;Appenzell Rhodes-Intérieures/Appenzell Innerrhoden,47.32,9.42;Saint-Gall/St. Gallen,47.2,9.25;Grisons/Graubünden,46.65,9.6;Argovie/Aargau,47.4,8.15;Thurgovie/Thurgau,47.57,9.1;Tessin/Ticino,46.3,8.8;Vaud,46.6,6.6;Valais/Wallis,46.2,7.6;Neuchâtel,47.0,6.8;Genève,46.2,6.13;Jura,47.35,7.15',
+    LU: 'Capellen,49.65,5.98;Clervaux,50.05,6.03;Diekirch,49.88,6.15;Echternach,49.8,6.37;Esch-sur-Alzette,49.52,6.0;Grevenmacher,49.67,6.4;Luxembourg,49.62,6.15;Mersch,49.75,6.1;Redange,49.77,5.9;Remich,49.55,6.33;Vianden,49.93,6.2;Wiltz,49.95,5.9',
+    ES: 'Andalousie/Andalucía,37.4,-4.6;Aragon,41.5,-0.7;Asturies/Asturias,43.3,-5.9;Îles Baléares/Baléares,39.6,2.95;Cantabrie/Cantabria,43.2,-4.0;Castille-et-León/Castilla y León,41.8,-4.6;Castille-La Manche/Castilla-La Mancha,39.5,-3.0;Catalogne/Catalunya,41.8,1.5;Communauté valencienne/Valence/Pays valencien,39.4,-0.6;Estrémadure/Extremadura,39.2,-6.1;Galice/Galicia,42.75,-7.9;Communauté de Madrid/Madrid,40.45,-3.7;Région de Murcie/Murcie,38.0,-1.5;Navarre/Navarra,42.7,-1.65;Pays basque/Euskadi,43.05,-2.6;La Rioja/Rioja,42.3,-2.5',
+    PT: 'Aveiro,40.7,-8.5;Beja,37.85,-7.9;Braga,41.55,-8.35;Bragance/Bragança,41.55,-6.8;Castelo Branco,39.85,-7.5;Coimbra,40.2,-8.3;Évora,38.6,-7.9;Faro/Algarve,37.2,-8.1;Guarda,40.6,-7.2;Leiria,39.7,-8.8;Lisbonne/Lisboa,38.95,-9.15;Portalegre,39.2,-7.6;Porto,41.2,-8.4;Santarém,39.3,-8.5;Setúbal,38.3,-8.65;Viana do Castelo,41.85,-8.45;Vila Real,41.5,-7.6;Viseu,40.8,-7.85',
+    IT: 'Piémont/Piemonte,45.05,7.9;Vallée d\'Aoste/Valle d\'Aosta,45.73,7.4;Lombardie/Lombardia,45.6,9.8;Trentin-Haut-Adige/Trentino-Alto Adige,46.4,11.3;Vénétie/Veneto,45.6,11.9;Frioul-Vénétie julienne/Friuli-Venezia Giulia,46.1,13.0;Ligurie/Liguria,44.45,8.9;Émilie-Romagne/Emilia-Romagna,44.5,11.0;Toscane/Toscana,43.4,11.1;Ombrie/Umbria,42.95,12.5;Marches/Marche,43.3,13.2;Latium/Lazio,41.9,12.8;Abruzzes/Abruzzo,42.2,13.8;Molise,41.65,14.6;Campanie/Campania,40.9,14.8;Pouilles/Puglia,41.0,16.6;Basilicate/Basilicata,40.5,16.1;Calabre/Calabria,39.0,16.4;Sicile/Sicilia,37.5,14.1;Sardaigne/Sardegna,40.1,9.0',
+    DE: 'Bade-Wurtemberg/Baden-Württemberg,48.5,9.0;Bavière/Bayern,48.9,11.4;Berlin,52.52,13.4;Brandebourg/Brandenburg,52.4,12.9;Brême/Bremen,53.08,8.8;Hambourg/Hamburg,53.55,10.0;Hesse/Hessen,50.6,9.0;Mecklembourg-Poméranie-Occidentale/Mecklenburg-Vorpommern,53.7,12.5;Basse-Saxe/Niedersachsen,52.7,9.3;Rhénanie-du-Nord-Westphalie/Nordrhein-Westfalen,51.5,7.6;Rhénanie-Palatinat/Rheinland-Pfalz,49.9,7.4;Sarre/Saarland,49.4,6.95;Saxe/Sachsen,51.0,13.3;Saxe-Anhalt/Sachsen-Anhalt,51.9,11.7;Schleswig-Holstein,54.2,9.8;Thuringe/Thüringen,50.9,11.0',
+    GB: 'Angleterre/England,52.5,-1.5;Écosse/Scotland,56.8,-4.2;Pays de Galles/Wales,52.3,-3.7;Irlande du Nord/Northern Ireland,54.6,-6.7',
+    IE: 'Carlow,52.72,-6.83;Cavan,53.98,-7.3;Clare,52.85,-9.0;Cork,51.95,-8.7;Donegal,54.9,-8.0;Dublin,53.38,-6.25;Galway,53.35,-8.75;Kerry,52.1,-9.6;Kildare,53.2,-6.8;Kilkenny,52.6,-7.25;Laois,53.0,-7.4;Leitrim,54.1,-8.0;Limerick,52.5,-8.75;Longford,53.7,-7.7;Louth,53.9,-6.5;Mayo,53.9,-9.3;Meath,53.6,-6.7;Monaghan,54.15,-6.95;Offaly,53.2,-7.6;Roscommon,53.7,-8.2;Sligo,54.15,-8.6;Tipperary,52.65,-7.9;Waterford,52.2,-7.6;Westmeath,53.5,-7.45;Wexford,52.5,-6.6;Wicklow,52.98,-6.4',
+    NL: 'Groningue/Groningen,53.25,6.75;Frise/Fryslân/Friesland,53.1,5.8;Drenthe,52.85,6.6;Overijssel,52.45,6.45;Flevoland,52.55,5.6;Gueldre/Gelderland,52.05,5.9;Utrecht,52.08,5.2;Hollande-Septentrionale/Noord-Holland,52.6,4.85;Hollande-Méridionale/Zuid-Holland,51.95,4.55;Zélande/Zeeland,51.5,3.85;Brabant-Septentrional/Noord-Brabant,51.55,5.2;Limbourg/Limburg,51.2,5.9',
+    PL: 'Basse-Silésie,51.1,16.4;Couïavie-Poméranie,53.1,18.4;Lublin,51.2,22.9;Lubusz,52.2,15.3;Łódź,51.6,19.4;Petite-Pologne,49.9,20.3;Mazovie,52.4,21.0;Opole,50.6,17.9;Basses-Carpates,49.9,22.2;Podlachie,53.3,22.9;Poméranie,54.2,17.9;Silésie,50.5,19.0;Sainte-Croix,50.8,20.8;Varmie-Mazurie,53.85,20.8;Grande-Pologne,52.3,17.2;Poméranie-Occidentale,53.5,15.4',
+    GR: 'Attique,38.05,23.75;Macédoine-Centrale,40.7,23.0;Macédoine-Occidentale,40.4,21.5;Macédoine-Orientale-et-Thrace,41.1,25.0;Épire,39.6,20.7;Thessalie,39.5,22.2;Grèce-Centrale,38.7,22.7;Îles Ioniennes,38.2,20.5;Grèce-Occidentale,38.2,21.6;Péloponnèse,37.5,22.3;Égée-Septentrionale,39.2,26.3;Égée-Méridionale,36.25,27.95;Crète,35.25,24.9',
+    MA: 'Tanger-Tétouan-Al Hoceïma,35.2,-5.6;Oriental,33.9,-2.3;Fès-Meknès,33.9,-4.8;Rabat-Salé-Kénitra,34.1,-6.3;Béni Mellal-Khénifra,32.5,-6.2;Casablanca-Settat,33.0,-7.7;Marrakech-Safi,31.8,-8.5;Drâa-Tafilalet,31.0,-5.5;Souss-Massa,30.0,-8.6;Guelmim-Oued Noun,28.8,-10.0',
+    DZ: 'Alger,36.7,3.1;Oran,35.6,-0.6;Constantine,36.3,6.6;Annaba,36.8,7.6;Blida,36.45,2.85;Batna,35.5,6.1;Sétif,36.1,5.4;Djelfa,34.5,3.3;Tlemcen,34.8,-1.4;Béjaïa,36.6,4.9;Tizi Ouzou,36.65,4.1;Biskra,34.7,5.6;Tébessa,35.2,8.0;Ouargla,31.0,6.5;Ghardaïa,32.2,3.9;Béchar,31.0,-2.5;Adrar,27.0,-1.0;Tamanrasset,22.5,5.5;Illizi,26.5,8.5;Laghouat,33.8,2.8;El Oued,33.4,7.0;Tiaret,35.2,1.4;Chlef,36.1,1.3;Mostaganem,35.9,0.2',
+    TN: 'Tunis,36.8,10.15;Ariana,36.95,10.15;Ben Arous,36.65,10.25;Manouba,36.8,9.95;Nabeul,36.6,10.75;Zaghouan,36.3,10.05;Bizerte,37.1,9.6;Béja,36.65,9.3;Jendouba,36.6,8.7;Le Kef/Kef,36.05,8.7;Siliana,36.0,9.3;Sousse,35.9,10.4;Monastir,35.65,10.8;Mahdia,35.35,10.8;Sfax,34.75,10.5;Kairouan,35.6,9.9;Kasserine,35.2,8.8;Sidi Bouzid,34.95,9.5;Gabès,33.75,9.9;Médenine,33.3,10.8;Tataouine,32.0,9.9;Gafsa,34.4,8.8;Tozeur,33.9,8.0;Kébili,33.4,8.9',
+    SN: 'Dakar,14.75,-17.35;Thiès,14.8,-16.8;Diourbel,14.65,-16.1;Fatick,14.1,-16.3;Kaolack,14.0,-15.9;Kaffrine,14.0,-15.2;Louga,15.4,-15.6;Saint-Louis,16.2,-15.5;Matam,15.3,-13.5;Tambacounda,13.6,-13.4;Kédougou,12.7,-12.3;Kolda,13.0,-14.6;Sédhiou,12.8,-15.4;Ziguinchor,12.7,-16.3',
+    CI: 'Abidjan,5.4,-4.0;Yamoussoukro,6.8,-5.3;Bas-Sassandra,5.3,-6.6;Comoé,6.0,-3.4;Denguélé,9.6,-7.3;Gôh-Djiboua,6.0,-5.7;Lacs,7.0,-4.7;Lagunes,5.9,-4.5;Montagnes,7.2,-7.6;Sassandra-Marahoué,7.0,-6.3;Savanes,9.5,-5.7;Vallée du Bandama,8.2,-5.2;Woroba,8.3,-7.0;Zanzan,8.5,-3.5',
+    US: 'Alabama,32.8,-86.8;Arizona,34.3,-111.7;Arkansas,34.9,-92.4;Californie/California,37.2,-119.5;Colorado,39.0,-105.5;Connecticut,41.6,-72.7;Delaware,39.0,-75.5;Floride/Florida,28.6,-82.4;Géorgie/Georgia,32.7,-83.4;Idaho,44.4,-114.6;Illinois,40.0,-89.2;Indiana,39.9,-86.3;Iowa,42.1,-93.5;Kansas,38.5,-98.4;Kentucky,37.5,-85.3;Louisiane/Louisiana,31.1,-92.0;Maine,45.4,-69.2;Maryland,39.0,-76.8;Massachusetts,42.3,-71.8;Michigan,44.3,-85.4;Minnesota,46.3,-94.3;Mississippi,32.7,-89.7;Missouri,38.4,-92.5;Montana,47.0,-109.6;Nebraska,41.5,-99.8;Nevada,39.3,-116.6;New Hampshire,43.7,-71.6;New Jersey,40.2,-74.6;Nouveau-Mexique/New Mexico,34.4,-106.1;État de New York/New York,42.9,-75.5;Caroline du Nord/North Carolina,35.5,-79.4;Dakota du Nord/North Dakota,47.5,-100.5;Ohio,40.3,-82.8;Oklahoma,35.6,-97.5;Oregon,43.9,-120.6;Pennsylvanie/Pennsylvania,40.9,-77.8;Rhode Island,41.7,-71.5;Caroline du Sud/South Carolina,33.9,-80.9;Dakota du Sud/South Dakota,44.4,-100.2;Tennessee,35.9,-86.4;Texas,31.5,-99.3;Utah,39.3,-111.7;Vermont,44.1,-72.7;Virginie/Virginia,37.5,-78.8;État de Washington/Washington,47.4,-120.5;Virginie-Occidentale/West Virginia,38.6,-80.6;Wisconsin,44.6,-89.9;Wyoming,43.0,-107.5',
+    CA: 'Colombie-Britannique/British Columbia,54.0,-124.5;Alberta,54.5,-114.5;Saskatchewan,54.0,-105.9;Manitoba,54.5,-97.5;Ontario,49.5,-85.0;Québec,52.0,-71.8;Nouveau-Brunswick/New Brunswick,46.6,-66.4;Nouvelle-Écosse/Nova Scotia,45.0,-63.0;Île-du-Prince-Édouard/Prince Edward Island,46.35,-63.3;Terre-Neuve-et-Labrador/Terre-Neuve/Newfoundland and Labrador,53.5,-60.5;Yukon,63.5,-135.5;Territoires du Nord-Ouest/Northwest Territories,63.5,-118.0;Nunavut,65.0,-97.0',
+    MX: 'Aguascalientes,21.9,-102.3;Basse-Californie/Baja California,30.5,-115.3;Basse-Californie du Sud/Baja California Sur,25.5,-111.6;Campeche,18.9,-90.4;Chiapas,16.5,-92.6;Chihuahua,28.6,-106.1;Coahuila,27.3,-102.0;Colima,19.1,-103.9;Durango,24.6,-104.6;Guanajuato,21.0,-101.0;Guerrero,17.6,-99.9;Hidalgo,20.5,-98.9;Jalisco,20.6,-103.6;État de Mexico/Estado de México,19.35,-99.6;Michoacán,19.2,-101.9;Morelos,18.75,-99.1;Nayarit,21.8,-104.9;Nuevo León,25.6,-99.9;Oaxaca,17.0,-96.5;Puebla,19.0,-97.9;Querétaro,20.85,-99.9;Quintana Roo,19.6,-88.0;San Luis Potosí,22.6,-100.4;Sinaloa,25.0,-107.5;Sonora,29.6,-110.6;Tabasco,18.0,-92.6;Tamaulipas,24.3,-98.6;Tlaxcala,19.4,-98.2;Veracruz,19.5,-96.6;Yucatán,20.7,-89.0;Zacatecas,23.3,-102.7;Ville de Mexico/Mexico/Ciudad de México/CDMX,19.35,-99.13',
+    BR: 'Acre,-9.0,-70.5;Alagoas,-9.6,-36.6;Amapá,1.4,-51.8;Amazonas,-4.2,-64.6;Bahia,-12.5,-41.7;Ceará,-5.2,-39.5;District fédéral/Distrito Federal,-15.8,-47.8;Espírito Santo,-19.6,-40.6;Goiás,-16.0,-49.6;Maranhão,-5.0,-45.3;Mato Grosso,-13.0,-55.9;Mato Grosso do Sul,-20.6,-54.6;Minas Gerais,-18.5,-44.6;Pará,-4.0,-52.5;Paraíba,-7.2,-36.7;Paraná,-24.6,-51.6;Pernambouc/Pernambuco,-8.4,-37.9;Piauí,-7.6,-42.9;Rio de Janeiro,-22.3,-42.6;Rio Grande do Norte,-5.8,-36.6;Rio Grande do Sul,-29.7,-53.5;Rondônia,-10.9,-62.8;Roraima,2.1,-61.4;Santa Catarina,-27.3,-50.4;São Paulo,-22.3,-48.6;Sergipe,-10.6,-37.4;Tocantins,-10.2,-48.3',
+    AR: 'Buenos Aires,-36.5,-60.0;Ville de Buenos Aires/Ciudad Autónoma de Buenos Aires,-34.61,-58.44;Catamarca,-27.0,-67.0;Chaco,-26.4,-60.8;Chubut,-43.8,-68.5;Córdoba,-32.0,-63.8;Corrientes,-28.8,-57.8;Entre Ríos,-32.1,-59.3;Formosa,-24.9,-59.9;Jujuy,-23.2,-65.7;La Pampa,-37.2,-65.4;La Rioja,-29.7,-67.2;Mendoza,-34.6,-68.5;Misiones,-26.9,-54.6;Neuquén,-38.6,-70.1;Río Negro,-40.0,-67.2;Salta,-24.8,-64.9;San Juan,-30.9,-68.9;San Luis,-33.8,-66.0;Santa Cruz,-48.8,-69.9;Santa Fe,-30.7,-60.9;Santiago del Estero,-27.8,-63.3;Terre de Feu/Tierra del Fuego,-54.3,-67.7;Tucumán,-27.0,-65.4',
+    JP: 'Hokkaidō,43.4,142.8;Aomori,40.75,140.8;Iwate,39.6,141.3;Miyagi,38.45,140.9;Akita,39.7,140.4;Yamagata,38.45,140.1;Fukushima,37.4,140.2;Ibaraki,36.3,140.3;Tochigi,36.65,139.8;Gunma,36.5,138.95;Saitama,36.0,139.4;Chiba,35.5,140.2;Tokyo,35.7,139.5;Kanagawa,35.4,139.35;Niigata,37.5,138.9;Toyama,36.6,137.2;Ishikawa,36.6,136.65;Fukui,35.85,136.2;Yamanashi,35.6,138.6;Nagano,36.1,138.0;Gifu,35.75,137.0;Shizuoka,35.0,138.3;Aichi,35.0,137.2;Mie,34.5,136.4;Shiga,35.2,136.1;Kyoto,35.2,135.5;Osaka,34.6,135.5;Hyōgo,35.0,134.85;Nara,34.3,135.85;Wakayama,33.9,135.4;Tottori,35.35,133.8;Shimane,35.05,132.6;Okayama,34.9,133.8;Hiroshima,34.6,132.75;Yamaguchi,34.2,131.5;Tokushima,33.9,134.3;Kagawa,34.25,133.95;Ehime,33.6,132.8;Kōchi,33.4,133.3;Fukuoka,33.55,130.7;Saga,33.3,130.1;Nagasaki,32.9,129.95;Kumamoto,32.6,130.8;Ōita,33.2,131.4;Miyazaki,32.2,131.3;Kagoshima,31.7,130.6',
+    CN: 'Anhui,31.8,117.2;Pékin/Beijing,40.2,116.4;Chongqing,30.0,107.5;Fujian,26.0,118.0;Gansu,36.0,104.0;Guangdong,23.4,113.5;Guangxi,23.8,108.8;Guizhou,26.8,106.8;Hainan,19.2,109.8;Hebei,38.0,114.5;Heilongjiang,47.5,128.0;Henan,33.9,113.5;Hubei,31.0,112.3;Hunan,27.6,111.7;Mongolie-Intérieure/Mongolie intérieure,41.5,111.5;Jiangsu,33.0,119.5;Jiangxi,27.6,115.7;Jilin,43.5,126.0;Liaoning,41.3,122.6;Ningxia,37.3,106.2;Qinghai,35.5,96.0;Shaanxi,35.2,108.9;Shandong,36.4,118.2;Shanghai,31.2,121.4;Shanxi,37.6,112.3;Sichuan,30.5,102.7;Tianjin,39.3,117.3;Tibet/Xizang,31.5,88.0;Xinjiang,41.5,85.5;Yunnan,24.9,101.5;Zhejiang,29.2,120.1',
+    IN: 'Andhra Pradesh,15.9,79.7;Arunachal Pradesh,28.1,94.5;Assam,26.3,92.8;Bihar,25.8,85.6;Chhattisgarh,21.3,82.0;Goa,15.4,74.0;Gujarat,22.7,71.6;Haryana,29.1,76.3;Himachal Pradesh,31.9,77.2;Jharkhand,23.6,85.3;Karnataka,14.8,75.7;Kerala,10.4,76.4;Madhya Pradesh,23.5,78.5;Maharashtra,19.5,75.7;Manipur,24.7,93.9;Meghalaya,25.5,91.3;Mizoram,23.3,92.8;Nagaland,26.1,94.5;Odisha/Orissa,20.5,84.4;Pendjab/Punjab,30.9,75.4;Rajasthan,26.6,73.8;Sikkim,27.6,88.5;Tamil Nadu,11.0,78.4;Telangana,17.9,79.0;Tripura,23.8,91.6;Uttar Pradesh,27.0,80.9;Uttarakhand,30.1,79.2;Bengale-Occidental/West Bengal,23.4,87.9;Delhi,28.65,77.15;Jammu-et-Cachemire/Jammu and Kashmir,33.6,75.0;Ladakh,34.3,77.6',
+    AU: 'Nouvelle-Galles du Sud/New South Wales,-32.2,147.0;Victoria,-37.0,144.5;Queensland,-22.5,144.5;Australie-Méridionale/South Australia,-30.0,135.8;Australie-Occidentale/Western Australia,-25.5,121.5;Tasmanie/Tasmania,-42.0,146.6;Territoire du Nord/Northern Territory,-19.5,133.4;Territoire de la capitale australienne/Australian Capital Territory,-35.5,149.0',
+  };
+  const REGIONS = {};
+  for (const [cc, s] of Object.entries(REGION_DATA)) {
+    REGIONS[cc] = s.split(';').map((x, i) => {
+      const [names, lat, lng] = x.split(',');
+      const all = names.split('/');
+      return { name: all[0], names: all, lat: +lat, lng: +lng, key: 'g' + cc + i, sub: '', area: true };
+    });
   }
   // Recherche dans les villes intégrées (secours si la recherche en ligne ne répond pas)
   function localCities(q, ccs) {
@@ -792,15 +815,10 @@ TV|Tuvalu|OC|0.011|-8.52|179.2|Funafuti|-8.521|179.198|`;
     }
     return sortMatches(list, q, c => c.names || [c.name]);
   }
-  const ovRegions = memo(async cc => {
-    const q = `[out:json][timeout:60];area["ISO3166-1"="${cc}"][admin_level=2]->.a;rel["boundary"="administrative"]["admin_level"="4"](area.a);out center tags;`;
-    return ((await overpass(q)).elements || [])
-      .filter(e => e.tags?.name && e.center && (!e.tags['ISO3166-2'] || e.tags['ISO3166-2'].startsWith(cc + '-')))
-      .map(e => ({
-        name: e.tags['name:fr'] || e.tags.name, sub: '', area: true, key: 'o' + e.id,
-        names: [e.tags.name, e.tags['name:fr'], e.tags['name:en']].filter(Boolean),
-        lat: e.center.lat, lng: e.center.lon,
-      }));
+  // Vrai si un des noms de la région correspond à la région/au comté trouvé sous le point
+  const sameRegion = (names, found) => found.some(f => {
+    const a = norm(f);
+    return a && names.some(n => { const b = norm(n); return a === b || a.endsWith(' ' + b) || b.endsWith(' ' + a); });
   });
   const countryProviders = zone => {
     const pickCity = async (diff, used) => {
@@ -823,16 +841,19 @@ TV|Tuvalu|OC|0.011|-8.52|179.2|Funafuti|-8.521|179.198|`;
       },
       regions: {
         async search(q) {
-          return (await photon(q, 'state', zone)).filter(r => r.cc === zone.cc).slice(0, 8)
-            .map(r => ({ name: r.name, sub: '', area: true, names: [r.name], lat: r.lat, lng: r.lng }));
+          const local = sortMatches(REGIONS[zone.cc].map((r, i) => ({ ...r, pop: -i })), q, r => r.names);
+          if (local.length) return local;
+          try {
+            return (await photon(q, 'state', zone)).filter(r => r.cc === zone.cc).slice(0, 8)
+              .map(r => ({ name: r.name, sub: '', area: true, names: [r.name], lat: r.lat, lng: r.lng }));
+          } catch { return []; }
         },
         async inside(p, ll) {
-          const st = norm((await whereIs(ll))?.state);
-          return !!st && (p.names || [p.name]).some(n => norm(n) === st);
+          const w = await whereIs(ll);
+          return !!w && w.cc === zone.cc && sameRegion(p.names || [p.name], [w.state, w.county]);
         },
         async pick(diff, used) {
-          const l = await ovRegions(zone.cc);
-          if (!l.length) throw new Error('aucune région');
+          const l = REGIONS[zone.cc];
           return rand(l.filter(r => !used.has(r.key))) || rand(l);
         },
         async point(diff) { return pickCity('difficile', new Set()); },
